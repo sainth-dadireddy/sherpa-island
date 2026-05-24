@@ -30,7 +30,9 @@ class HUDInterceptor: NSObject, ObservableObject {
     }
 
     deinit {
-        stopEventTap()
+        Task { @MainActor in
+            stopEventTap()
+        }
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
         }
@@ -39,7 +41,7 @@ class HUDInterceptor: NSObject, ObservableObject {
 
     // MARK: - CGEventTap Setup
     private func setupEventTap() {
-        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue) | (1 << CGEventType.systemDefined.rawValue)
+        let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
 
         guard let tap = CGEvent.tapCreate(
             tap: .cghidEventTap,
@@ -79,12 +81,16 @@ class HUDInterceptor: NSObject, ObservableObject {
 
     // MARK: - CGEvent Handler
     private func handleCGEvent(_ type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
-        guard type == .systemDefined else {
+        guard type == .keyDown else {
             return Unmanaged.passRetained(event)
         }
 
-        let keyCode = (event.data1 >> 16) & 0xffff
-        let keyFlags = event.data1 & 0xffff
+        guard let nsEvent = NSEvent(cgEvent: event) else {
+            return Unmanaged.passRetained(event)
+        }
+
+        let keyCode = UInt32((nsEvent.data1 >> 16) & 0xffff)
+        let keyFlags = nsEvent.data1 & 0xffff
         let keyDown = (keyFlags & 0x100) == 0
 
         guard keyDown else {

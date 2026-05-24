@@ -109,9 +109,8 @@ class FileShelfStore: ObservableObject {
             return
         }
 
-        let services = NSSharingService.sharingServices(forItems: [file.url])
-        if let airdropService = services.first(where: { $0.name == NSSharingService.Name.sendViaAirdrop }) {
-            airdropService.perform(withItems: [file.url])
+        if let service = NSSharingService(named: .sendViaAirDrop) {
+            service.perform(withItems: [file.url])
         }
     }
 

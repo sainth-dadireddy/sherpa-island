@@ -350,7 +350,7 @@ struct WeatherView: View {
                     RoundedRectangle(cornerRadius: 12)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
-                .backdropFilter(BlurEffect(style: .light))
+                .background(.ultraThinMaterial)
 
             VStack(spacing: 8) {
                 // Current Weather (Compact)

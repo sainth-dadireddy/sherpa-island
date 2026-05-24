@@ -284,18 +284,16 @@ struct MemoryrPopupView: View {
                 }
             }
         }
-        .frame(width: 500, maxHeight: 500)
-        .background(
-            Material.ultraThin
-                .ignoresSafeArea()
-        )
+        .frame(width: 500)
+        .frame(maxHeight: 500)
+        .background(Material.ultraThin)
         .cornerRadius(12)
         .onChange(of: searchText) { oldValue, newValue in
             Task {
                 await searcher.search(query: newValue)
             }
         }
-        .onKeyPress(.escape) { press in
+        .onKeyPress(.escape) {
             dismiss()
             return .handled
         }
@@ -337,7 +335,7 @@ struct MemoryResultRow: View {
                     // Age
                     Text(relativeDate(hit.createdAt))
                         .font(.caption2)
-                        .foregroundColor(.tertiary)
+                        .foregroundStyle(.tertiary)
                 }
 
                 // Snippet
