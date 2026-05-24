@@ -59,13 +59,26 @@ enum UsageAPI {
     /// tokens to the keychain. We just read whatever's there.
     /// If the token is expired and Claude Code hasn't refreshed it,
     /// we return nil and the UI falls back to jsonl-derived data.
+    private static let debugEnabled = ProcessInfo.processInfo.environment["SHERPA_ISLAND_DEBUG"] != nil
+
+    private static func dlog(_ msg: String) {
+        guard debugEnabled else { return }
+        let line = "[\(Date())] [UsageAPI] \(msg)\n"
+        if let data = line.data(using: .utf8),
+           let h = try? FileHandle(forWritingTo: URL(fileURLWithPath: "/tmp/sherpa-usage.log")) {
+            h.seekToEndOfFile()
+            h.write(data)
+            try? h.close()
+        } else {
+            try? line.data(using: .utf8)?.write(to: URL(fileURLWithPath: "/tmp/sherpa-usage.log"))
+        }
+    }
+
     static func accessToken() async -> String? {
         let start = Date()
+        dlog("accessToken() entry")
         guard let creds = readCredentials() else {
-            print(String(
-                format: "[UsageAPI] keychain read failed in %.2fs",
-                Date().timeIntervalSince(start)
-            ))
+            dlog("keychain read failed in \(Date().timeIntervalSince(start))s")
             return nil
         }
 
@@ -94,14 +107,38 @@ enum UsageAPI {
     }
 
     private static func readCredentials() -> Credentials? {
-        // Try with the user's account name first (Claude Code writes
-        // here after token refresh), then fall back to the null-account
-        // entry (initial login). The account-specific entry has the
-        // freshest tokens.
+        // Try the on-disk credentials file first. Claude Code keeps
+        // `~/.claude/.credentials.json` in sync with the keychain, and a
+        // direct read avoids the keychain ACL prompt that wedges background
+        // apps (LSUIElement) when /usr/bin/security tries to authorize.
+        if let creds = readCredentialsFile() {
+            return creds
+        }
+        // Fallback: keychain via `/usr/bin/security`. Account-specific
+        // entry first (freshest), then the null-account entry.
         if let creds = readKeychainEntry(account: NSUserName()) {
             return creds
         }
         return readKeychainEntry(account: nil)
+    }
+
+    private static func readCredentialsFile() -> Credentials? {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let url = home.appendingPathComponent(".claude/.credentials.json")
+        guard let data = try? Data(contentsOf: url) else {
+            dlog("credentials file unreadable at \(url.path)")
+            return nil
+        }
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let oauth = json["claudeAiOauth"] as? [String: Any],
+              let token = oauth["accessToken"] as? String,
+              let expires = oauth["expiresAt"] as? Double
+        else {
+            dlog("credentials file JSON malformed")
+            return nil
+        }
+        dlog("credentials file ok")
+        return Credentials(accessToken: token, expiresAt: expires)
     }
 
     private static func readKeychainEntry(account: String?) -> Credentials? {
@@ -114,15 +151,34 @@ enum UsageAPI {
         args.append("-w")
         task.arguments = args
         let out = Pipe()
+        let err = Pipe()
         task.standardOutput = out
-        task.standardError = Pipe()
+        task.standardError = err
         do {
             try task.run()
-            task.waitUntilExit()
         } catch {
+            dlog("security exec error: \(error)")
             return nil
         }
-        guard task.terminationStatus == 0 else { return nil }
+
+        // Bound the wait — a hung keychain prompt (no UI to show on a
+        // LSUIElement background app) would otherwise wedge this thread
+        // forever. 4s is plenty for a normal find-generic-password call.
+        let deadline = Date().addingTimeInterval(4)
+        while task.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if task.isRunning {
+            task.terminate()
+            dlog("security timed out account=\(account ?? "<nil>") — terminated")
+            return nil
+        }
+        guard task.terminationStatus == 0 else {
+            let errData = err.fileHandleForReading.readDataToEndOfFile()
+            let errText = String(data: errData, encoding: .utf8) ?? "<no stderr>"
+            dlog("security exit \(task.terminationStatus) account=\(account ?? "<nil>") stderr=\(errText)")
+            return nil
+        }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         guard let text = String(data: data, encoding: .utf8) else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
