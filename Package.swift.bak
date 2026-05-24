@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "SherpaIsland",
+    name: "NotchPilot",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "SherpaIsland",
+            name: "NotchPilot",
             path: "Sources/NotchPilot"
         )
     ]
