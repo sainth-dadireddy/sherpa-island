@@ -273,6 +273,22 @@ final class BuddyPreferences: ObservableObject {
         }
     }
 
+    /// AVSpeechSynthesisVoice identifier the user picked. Empty string =
+    /// fall back to the built-in Ava → en-US chain in VoiceAnnouncer.
+    @Published var voiceIdentifier: String {
+        didSet {
+            UserDefaults.standard.set(voiceIdentifier, forKey: Self.voiceIdentifierKey)
+        }
+    }
+
+    /// Playback rate multiplier applied to AVSpeechUtteranceDefaultSpeechRate.
+    /// Range 0.5–1.5. Stored as Double.
+    @Published var voiceRate: Double {
+        didSet {
+            UserDefaults.standard.set(voiceRate, forKey: Self.voiceRateKey)
+        }
+    }
+
     /// Returns true iff the master toggle is on AND this specific event's
     /// flag is on. Use this at every `speak` call site.
     func voiceAllows(_ event: VoiceEvent) -> Bool {
@@ -371,6 +387,8 @@ final class BuddyPreferences: ObservableObject {
     private static let colorKey = "sherpaisland.color"
     private static let voiceKey = "sherpaisland.voice"
     private static let voiceEventsKey = "sherpaisland.voice.events"
+    private static let voiceIdentifierKey = "sherpaisland.voice.identifier"
+    private static let voiceRateKey = "sherpaisland.voice.rate"
     private static let alwaysVisibleKey = "sherpaisland.alwaysVisible"
     private static let startAtLoginKey = "sherpaisland.startAtLogin"
     private static let hapticsKey = "sherpaisland.haptics"
@@ -396,6 +414,8 @@ final class BuddyPreferences: ObservableObject {
         color = BuddyColor(rawValue: storedColor) ?? .green
         // Voice master defaults off so new users don't get surprised.
         voiceEnabled = defaults.object(forKey: Self.voiceKey) as? Bool ?? false
+        voiceIdentifier = defaults.string(forKey: Self.voiceIdentifierKey) ?? ""
+        voiceRate = defaults.object(forKey: Self.voiceRateKey) as? Double ?? 1.05
         alwaysVisible = defaults.object(forKey: Self.alwaysVisibleKey) as? Bool ?? true
         startAtLogin = defaults.object(forKey: Self.startAtLoginKey) as? Bool ?? true
         hapticsEnabled = defaults.object(forKey: Self.hapticsKey) as? Bool ?? true

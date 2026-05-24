@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 import UniformTypeIdentifiers
 
 struct NotchContentView: View {
@@ -3752,6 +3753,8 @@ struct NotchContentView: View {
                     .labelsHidden()
             }
 
+            voicePickerRow
+
             VStack(spacing: 6) {
                 ForEach(VoiceEvent.allCases) { event in
                     voiceEventRow(event)
@@ -3759,6 +3762,56 @@ struct NotchContentView: View {
             }
             .opacity(prefs.voiceEnabled ? 1 : 0.35)
             .allowsHitTesting(prefs.voiceEnabled)
+        }
+    }
+
+    /// Voice + rate selector. Lists English voices from the system,
+    /// preferring premium/enhanced quality entries. Test button speaks
+    /// a sample phrase so the user can hear before committing.
+    private var voicePickerRow: some View {
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+            .filter { $0.language.hasPrefix("en") }
+            .sorted { ($0.quality.rawValue, $0.name) > ($1.quality.rawValue, $1.name) }
+        return HStack(spacing: 8) {
+            Text("Voice")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 60, alignment: .leading)
+            Picker("", selection: Binding(
+                get: { prefs.voiceIdentifier.isEmpty ? "default" : prefs.voiceIdentifier },
+                set: { prefs.voiceIdentifier = $0 == "default" ? "" : $0 }
+            )) {
+                Text("System default").tag("default")
+                ForEach(voices, id: \.identifier) { v in
+                    Text("\(v.name) \(qualityLabel(v.quality))").tag(v.identifier)
+                }
+            }
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .labelsHidden()
+            .tint(.white)
+            Button {
+                VoiceAnnouncer.shared.preview(
+                    "Sherpa Island, voice check.",
+                    prefs: prefs
+                )
+            } label: {
+                Image(systemName: "play.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundColor(accent)
+            }
+            .buttonStyle(.plain)
+            .help("Test the selected voice")
+        }
+        .opacity(prefs.voiceEnabled ? 1 : 0.35)
+        .allowsHitTesting(prefs.voiceEnabled)
+    }
+
+    private func qualityLabel(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium:  return "(Premium)"
+        case .enhanced: return "(Enhanced)"
+        default:        return ""
         }
     }
 

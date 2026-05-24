@@ -26,18 +26,33 @@ final class VoiceAnnouncer {
         }
         lastSpokenAt[key] = Date()
 
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
-        utterance.pitchMultiplier = 1.0
-        utterance.volume = 0.85
-        if let voice = AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Ava")
-            ?? AVSpeechSynthesisVoice(language: "en-US") {
-            utterance.voice = voice
-        }
+        let utterance = makeUtterance(text: text, prefs: prefs)
         synthesizer.speak(utterance)
+    }
+
+    /// Speak a test phrase without the dedupe gate. Used by the
+    /// Settings voice picker so the user can sample voices quickly.
+    func preview(_ text: String, prefs: BuddyPreferences) {
+        synthesizer.stopSpeaking(at: .immediate)
+        synthesizer.speak(makeUtterance(text: text, prefs: prefs))
     }
 
     func stopAll() {
         synthesizer.stopSpeaking(at: .immediate)
+    }
+
+    private func makeUtterance(text: String, prefs: BuddyPreferences) -> AVSpeechUtterance {
+        let utterance = AVSpeechUtterance(string: text)
+        let rateMul = max(0.5, min(1.5, prefs.voiceRate))
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMul)
+        utterance.pitchMultiplier = 1.0
+        utterance.volume = 0.85
+        let chosen = prefs.voiceIdentifier.isEmpty
+            ? nil
+            : AVSpeechSynthesisVoice(identifier: prefs.voiceIdentifier)
+        utterance.voice = chosen
+            ?? AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Ava")
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+        return utterance
     }
 }
