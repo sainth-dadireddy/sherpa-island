@@ -1004,8 +1004,6 @@ struct NotchContentView: View {
                     sessionsSection
                     heatmapSection
                     thermalSection
-                    recentHooksSection
-                    recentArchiveSection
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
