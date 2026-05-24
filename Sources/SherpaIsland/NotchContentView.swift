@@ -3039,26 +3039,6 @@ struct NotchContentView: View {
                 .foregroundColor(color.opacity(0.85))
                 .monospacedDigit()
                 .help("Context window: \(formatTokens(used)) / \(formatTokens(window))")
-            if fraction >= 0.65 {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString("/compact", forType: .string)
-                } label: {
-                    Text("/compact")
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
-                        .foregroundColor(color.opacity(0.95))
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(
-                            Capsule().fill(color.opacity(0.18))
-                        )
-                        .overlay(
-                            Capsule().stroke(color.opacity(0.4), lineWidth: 0.5)
-                        )
-                }
-                .buttonStyle(.plain)
-                .help("Context approaching cap. Click to copy `/compact` to clipboard — paste in your terminal.")
-            }
         }
     }
 
@@ -4247,7 +4227,20 @@ struct NotchContentView: View {
     /// the session, parsed from the jsonl. We intentionally don't let the
     /// user edit it from the notch — the source of truth is Claude itself
     /// (changed via Shift+Tab in the TUI or the --permission-mode flag).
+    @ViewBuilder
     private func modeBadge(_ nativeMode: String) -> some View {
+        // Hide the badge for the boring "default" case — it added
+        // visual noise to every row. Only surface non-default modes
+        // (acceptEdits, plan, bypassPermissions) where the user has
+        // explicitly opted into a different permission posture.
+        if nativeMode.isEmpty || nativeMode == "default" {
+            EmptyView()
+        } else {
+            modeBadgeContent(nativeMode)
+        }
+    }
+
+    private func modeBadgeContent(_ nativeMode: String) -> some View {
         let (label, tint) = modeDisplay(nativeMode)
         return HStack(spacing: 4) {
             Circle()
