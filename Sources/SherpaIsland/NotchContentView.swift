@@ -3828,79 +3828,10 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private func stylePreview(_ style: BuddyStyle) -> some View {
-        // A one-off renderer showing each buddy style in the user's color
-        // so the picker chips can display live mini-previews.
-        let c = prefs.color.base
-        switch style {
-        case .eyes:
-            HStack(spacing: 4) {
-                Circle().fill(c).frame(width: 7, height: 7)
-                Circle().fill(c).frame(width: 7, height: 7)
-            }
-        case .orb:
-            Circle()
-                .fill(c)
-                .frame(width: 17, height: 17)
-                .overlay(
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [.white.opacity(0.4), .clear],
-                                center: UnitPoint(x: 0.3, y: 0.28),
-                                startRadius: 0,
-                                endRadius: 9
-                            )
-                        )
-                )
-        case .bars:
-            HStack(spacing: 2) {
-                ForEach([10, 14, 8, 12], id: \.self) { h in
-                    Capsule().fill(c).frame(width: 3, height: CGFloat(h))
-                }
-            }
-        case .ghost:
-            ZStack {
-                GhostShape()
-                    .fill(c)
-                    .frame(width: 18, height: 22)
-                HStack(spacing: 4) {
-                    Circle().fill(.white).frame(width: 3.5, height: 3.5)
-                    Circle().fill(.white).frame(width: 3.5, height: 3.5)
-                }
-                .offset(y: -2)
-            }
-        case .cat:
-            ZStack {
-                Circle().fill(c).frame(width: 18, height: 18)
-                TriangleShape()
-                    .fill(c)
-                    .frame(width: 6, height: 7)
-                    .offset(x: -6, y: -10)
-                TriangleShape()
-                    .fill(c)
-                    .frame(width: 6, height: 7)
-                    .offset(x: 6, y: -10)
-                HStack(spacing: 5) {
-                    Circle().fill(.white).frame(width: 3.5, height: 3.5)
-                    Circle().fill(.white).frame(width: 3.5, height: 3.5)
-                }
-            }
-            .frame(width: 22, height: 22)
-        case .bunny:
-            ZStack {
-                HStack(spacing: 2) {
-                    Capsule().fill(c).frame(width: 3, height: 9)
-                    Capsule().fill(c).frame(width: 3, height: 9)
-                }
-                .offset(y: -9)
-                Ellipse().fill(c).frame(width: 16, height: 14)
-                HStack(spacing: 5) {
-                    Circle().fill(.white).frame(width: 3, height: 3)
-                    Circle().fill(.white).frame(width: 3, height: 3)
-                }
-            }
-            .frame(width: 18, height: 26)
-        }
+        // Live animated preview — instantiate BuddyFace with styleOverride
+        // so each chip cycles its own blink/pulse/etc. without changing
+        // the user's currently-selected style.
+        BuddyFace(mode: .active, size: 10, styleOverride: style)
     }
 
     private func colorPickerChip(_ color: BuddyColor) -> some View {

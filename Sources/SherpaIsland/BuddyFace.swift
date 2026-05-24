@@ -75,14 +75,18 @@ struct BuddyFace: View {
     let mode: Mode
     var size: CGFloat = 8
     var colorOverride: BuddyColor? = nil
+    /// Force a specific style instead of reading from prefs. Used by
+    /// the Settings gallery so each chip can animate its own style.
+    var styleOverride: BuddyStyle? = nil
 
     @EnvironmentObject private var prefs: BuddyPreferences
 
     private var effectiveColor: BuddyColor { colorOverride ?? prefs.color }
+    private var effectiveStyle: BuddyStyle { styleOverride ?? prefs.style }
 
     var body: some View {
         Group {
-            switch prefs.style {
+            switch effectiveStyle {
             case .eyes:  EyesBuddy(mode: mode, size: size, color: effectiveColor)
             case .orb:   OrbBuddy(mode: mode, size: size, color: effectiveColor)
             case .bars:  BarsBuddy(mode: mode, size: size, color: effectiveColor)
@@ -91,7 +95,7 @@ struct BuddyFace: View {
             case .bunny: BunnyBuddy(mode: mode, size: size, color: effectiveColor)
             }
         }
-        .id(prefs.style)
+        .id(effectiveStyle)
     }
 }
 
