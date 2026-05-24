@@ -34,7 +34,7 @@ final class AutoModeSwitcher: ObservableObject {
     private var updateTimer: Timer?
     private var modeEvaluationTask: Task<Void, Never>?
 
-    private let logger = Logger(subsystem: "com.sherpa.NotchPilot", category: "AutoModeSwitcher")
+    private let logger = Logger(subsystem: "com.sherpa.SherpaIsland", category: "AutoModeSwitcher")
 
     init() {
         startMonitoring()

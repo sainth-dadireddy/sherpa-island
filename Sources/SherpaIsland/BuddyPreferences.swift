@@ -243,16 +243,16 @@ final class BuddyPreferences: ObservableObject {
             if startAtLogin {
                 if service.status != .enabled {
                     try service.register()
-                    print("[NotchPilot] Registered as login item")
+                    print("[SherpaIsland] Registered as login item")
                 }
             } else {
                 if service.status == .enabled || service.status == .requiresApproval {
                     try service.unregister()
-                    print("[NotchPilot] Unregistered from login items")
+                    print("[SherpaIsland] Unregistered from login items")
                 }
             }
         } catch {
-            print("[NotchPilot] start-at-login update failed: \(error)")
+            print("[SherpaIsland] start-at-login update failed: \(error)")
         }
     }
 

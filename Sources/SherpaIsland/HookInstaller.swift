@@ -65,7 +65,7 @@ enum HookInstaller {
         for event in events {
             var eventEntries = (hooks[event] as? [[String: Any]]) ?? []
 
-            // Drop any entries that point to an obsolete NotchPilot hook:
+            // Drop any entries that point to an obsolete SherpaIsland hook:
             // either the legacy Node script or a previous app-binary path
             // that no longer matches the current one (e.g., user moved
             // the app bundle).
@@ -117,9 +117,9 @@ enum HookInstaller {
                 options: [.prettyPrinted, .sortedKeys]
             )
             try data.write(to: URL(fileURLWithPath: path))
-            print("[NotchPilot] Registered hook (\(command)) in \(path)")
+            print("[SherpaIsland] Registered hook (\(command)) in \(path)")
         } catch {
-            print("[NotchPilot] settings.json update failed: \(error)")
+            print("[SherpaIsland] settings.json update failed: \(error)")
         }
     }
 }

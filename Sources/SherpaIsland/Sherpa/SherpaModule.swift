@@ -1,7 +1,7 @@
 import SwiftUI
 import Combine
 
-/// A protocol representing a modular widget in NotchPilot.
+/// A protocol representing a modular widget in SherpaIsland.
 @MainActor
 public protocol SherpaModule: AnyObject, Identifiable {
     associatedtype View: SwiftUI.View

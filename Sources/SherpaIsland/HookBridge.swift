@@ -87,9 +87,9 @@ final class HookBridge: ObservableObject {
 
         do {
             try server.start(at: socketPath)
-            print("[NotchPilot] Socket listening at \(socketPath)")
+            print("[SherpaIsland] Socket listening at \(socketPath)")
         } catch {
-            print("[NotchPilot] Socket server failed to start: \(error)")
+            print("[SherpaIsland] Socket server failed to start: \(error)")
         }
     }
 
@@ -291,7 +291,7 @@ final class HookBridge: ObservableObject {
             settings["permissions"] = permissions
             return settings
         }
-        print("[NotchPilot] Added \(toolName) to permissions.allow")
+        print("[SherpaIsland] Added \(toolName) to permissions.allow")
     }
 
     private func removeFromSettingsAllow(toolName: String) {
@@ -305,7 +305,7 @@ final class HookBridge: ObservableObject {
             settings["permissions"] = permissions
             return settings
         }
-        print("[NotchPilot] Removed \(toolName) from permissions.allow")
+        print("[SherpaIsland] Removed \(toolName) from permissions.allow")
     }
 
     /// Load / mutate / save the settings.json atomically. The mutator can

@@ -222,7 +222,7 @@ final class UpdateChecker: ObservableObject {
             // 1. Download
             let (fileURL, _) = try await URLSession.shared.download(from: url)
             let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("NotchPilot-update.dmg")
+                .appendingPathComponent("SherpaIsland-update.dmg")
             try? FileManager.default.removeItem(at: tmp)
             try FileManager.default.moveItem(at: fileURL, to: tmp)
 

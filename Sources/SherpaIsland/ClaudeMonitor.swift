@@ -547,7 +547,7 @@ final class ClaudeMonitor: ObservableObject {
             lastLiveClaudePIDs[normalized, default: []].append(pid)
         }
         if ProcessInfo.processInfo.environment["NOTCH_PILOT_DEBUG"] != nil {
-            print("[NotchPilot] liveClaudeCwdCounts: \(counts)")
+            print("[SherpaIsland] liveClaudeCwdCounts: \(counts)")
         }
         return counts
     }

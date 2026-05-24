@@ -7,7 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "SherpaIsland",
-            path: "Sources/NotchPilot"
+            path: "Sources/SherpaIsland"
         )
     ]
 )

@@ -1,7 +1,7 @@
 import AppKit
 
 @main
-struct NotchPilotApp {
+struct SherpaIslandApp {
     @MainActor
     static func main() {
         // Dual-mode binary: when Claude Code invokes us as a hook, skip

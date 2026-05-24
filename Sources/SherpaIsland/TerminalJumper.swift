@@ -79,14 +79,14 @@ enum TerminalJumper {
         }
 
         guard !pidsToTry.isEmpty else {
-            print("[NotchPilot] No claude process with cwd \(cwd)")
+            print("[SherpaIsland] No claude process with cwd \(cwd)")
             return
         }
 
         // Step 1: tmux pane navigation
         for pid in pidsToTry {
             if selectTmuxPane(forClaudePID: pid) {
-                print("[NotchPilot] Switched tmux to pane for pid \(pid)")
+                print("[SherpaIsland] Switched tmux to pane for pid \(pid)")
                 break
             }
         }
@@ -96,7 +96,7 @@ enum TerminalJumper {
             if let terminalPID = findTerminalAncestor(startingAt: pid),
                let app = NSRunningApplication(processIdentifier: terminalPID) {
                 app.activate()
-                print("[NotchPilot] Activated \(app.localizedName ?? "terminal") (parent chain)")
+                print("[SherpaIsland] Activated \(app.localizedName ?? "terminal") (parent chain)")
                 return
             }
         }
@@ -104,11 +104,11 @@ enum TerminalJumper {
         // Step 3: fallback — any running terminal app.
         if let app = fallbackTerminalApp() {
             app.activate()
-            print("[NotchPilot] Activated \(app.localizedName ?? "terminal") (bundle-ID fallback)")
+            print("[SherpaIsland] Activated \(app.localizedName ?? "terminal") (bundle-ID fallback)")
             return
         }
 
-        print("[NotchPilot] No terminal found for cwd \(cwd)")
+        print("[SherpaIsland] No terminal found for cwd \(cwd)")
     }
 
     /// Find the claude PID that has the session's jsonl file open.
@@ -312,13 +312,13 @@ enum TerminalJumper {
             try task.run()
             task.waitUntilExit()
         } catch {
-            print("[NotchPilot] runProcess failed: \(path) \(args) error: \(error)")
+            print("[SherpaIsland] runProcess failed: \(path) \(args) error: \(error)")
             return nil
         }
         if task.terminationStatus != 0 {
             let errData = err.fileHandleForReading.readDataToEndOfFile()
             let errStr = String(data: errData, encoding: .utf8) ?? ""
-            print("[NotchPilot] runProcess exit \(task.terminationStatus): \(path) \(args) stderr: \(errStr)")
+            print("[SherpaIsland] runProcess exit \(task.terminationStatus): \(path) \(args) stderr: \(errStr)")
         }
         let data = out.fileHandleForReading.readDataToEndOfFile()
         return String(data: data, encoding: .utf8)
