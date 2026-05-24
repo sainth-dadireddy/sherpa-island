@@ -370,10 +370,17 @@ final class ClaudeMonitor: ObservableObject {
                 foundNativeMode = pm
             }
 
-            if foundResult != nil {
+            // Keep scanning until we ALSO have a tool action — without
+            // this gate, a user-turn entry seen first would set foundResult
+            // and short-circuit the rest of the loop, so the tool icon
+            // could never fill in after the user replied.
+            if foundResult != nil && foundAction != .none {
                 if foundCwd != nil && foundModel != nil && foundNativeMode != nil { break }
                 continue
             }
+            // If we already have a result, only the assistant tool_use
+            // search below still matters — skip the user/result branches.
+            let onlyLookForAction = foundResult != nil
 
             let type = obj["type"] as? String ?? ""
 
@@ -395,7 +402,9 @@ final class ClaudeMonitor: ObservableObject {
                         ($0["type"] as? String) == "tool_use"
                     }),
                        let name = toolBlock["name"] as? String {
-                        foundResult = (summarize(toolBlock: toolBlock), shortStatus(forTool: name))
+                        if !onlyLookForAction {
+                            foundResult = (summarize(toolBlock: toolBlock), shortStatus(forTool: name))
+                        }
                         if foundAction == .none {
                             foundAction = classify(
                                 tool: name,
@@ -404,6 +413,7 @@ final class ClaudeMonitor: ObservableObject {
                         }
                         if foundCwd != nil && foundModel != nil && foundNativeMode != nil { break } else { continue }
                     }
+                    if onlyLookForAction { continue }
                     if let lastBlock = content.last {
                         let blockType = lastBlock["type"] as? String ?? ""
                         if blockType == "thinking" {
@@ -416,10 +426,13 @@ final class ClaudeMonitor: ObservableObject {
                         }
                     }
                 }
-                foundResult = ("", "")
+                if !onlyLookForAction {
+                    foundResult = ("", "")
+                }
                 if foundCwd != nil && foundModel != nil && foundNativeMode != nil { break } else { continue }
             }
 
+            if onlyLookForAction { continue }
             if type == "user" {
                 let preview: String
                 if let msg = obj["message"] as? [String: Any] {
