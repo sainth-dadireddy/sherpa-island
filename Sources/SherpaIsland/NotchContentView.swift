@@ -3546,6 +3546,19 @@ struct NotchContentView: View {
                             .fill(Color.white.opacity(0.2))
                             .frame(width: 2, height: 2)
                     }
+                    if let branch = GitInfo.branch(for: s.cwd) {
+                        Image(systemName: "arrow.triangle.branch")
+                            .font(.system(size: 8))
+                            .foregroundColor(.white.opacity(0.4))
+                        Text(branch)
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundColor(.white.opacity(0.55))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Circle()
+                            .fill(Color.white.opacity(0.2))
+                            .frame(width: 2, height: 2)
+                    }
                     Text("up \(durationLabel(s.startTime))")
                         .font(.system(size: 9, design: .rounded))
                         .foregroundColor(.white.opacity(0.45))
