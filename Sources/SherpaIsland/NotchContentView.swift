@@ -471,6 +471,14 @@ struct NotchContentView: View {
         }
         .onChange(of: effectivelyExpanded) { _, newValue in
             onExpandedChange(newValue)
+            // The notch lives in an NSPanel, so NSApplication.didBecomeActive
+            // never fires when the user grants Accessibility in System
+            // Settings and comes back. Piggyback on the expand transition
+            // — anytime the panel opens, re-check AX so the banner clears
+            // without needing the Recheck button or a relaunch.
+            if newValue {
+                hotkeys.recheckAccessibility()
+            }
             // Haptic tick on panel open/close. This is the canonical
             // "the notch just did something" state — fires on hover,
             // un-hover, permission arrival, permission resolved. Uses
@@ -965,6 +973,10 @@ struct NotchContentView: View {
                         .onTapGesture { usageDetailShown = false }
                     usageDetailPopover
                         .padding(.top, max(notchHeight, 14) + 52)
+                        // Tap anywhere on the card background also closes
+                        // — buttons inside intercept their own taps so
+                        // "Open claude.ai usage" still works.
+                        .onTapGesture { usageDetailShown = false }
                         .transition(
                             .opacity
                             .combined(with: .scale(scale: 0.94, anchor: .top))
