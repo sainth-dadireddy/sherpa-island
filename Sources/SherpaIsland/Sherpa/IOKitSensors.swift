@@ -51,20 +51,26 @@ class TemperatureMonitor: ObservableObject {
             guard let self else { return }
 
             var newSensors: [String: Double] = [:]
-            var allSucceeded = true
 
-            for (name, key) in Self.smcKeysAppleSilicon {
-                if let temp = self.readKey(key) {
-                    newSensors[name] = temp
-                } else {
-                    allSucceeded = false
-                    break
+            // First try ThermalForge — gives REAL Celsius via SMC if the
+            // user installed it. Free, open-source, signed helper.
+            if let tf = self.readViaThermalForge(), !tf.isEmpty {
+                newSensors = tf
+            } else {
+                // Fallback to direct SMC read (usually fails on Apple Si).
+                var allSucceeded = true
+                for (name, key) in Self.smcKeysAppleSilicon {
+                    if let temp = self.readKey(key) {
+                        newSensors[name] = temp
+                    } else {
+                        allSucceeded = false
+                        break
+                    }
                 }
-            }
-
-            if !allSucceeded {
-                if let fallbackSensors = self.readViaPowermetrics() {
-                    newSensors = fallbackSensors
+                if !allSucceeded {
+                    if let fallback = self.readViaPowermetrics() {
+                        newSensors = fallback
+                    }
                 }
             }
 
@@ -72,6 +78,60 @@ class TemperatureMonitor: ObservableObject {
                 self.sensors = newSensors
             }
         }
+    }
+
+    /// Shell out to `/usr/local/bin/thermalforge status` (or
+    /// `/opt/homebrew/bin/thermalforge`) and parse the JSON. Returns
+    /// real Celsius temperatures keyed by friendly names. Returns nil
+    /// when ThermalForge isn't installed.
+    private func readViaThermalForge() -> [String: Double]? {
+        let candidates = [
+            "/usr/local/bin/thermalforge",
+            "/opt/homebrew/bin/thermalforge"
+        ]
+        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            return nil
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: path)
+        process.arguments = ["status"]
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = Pipe()
+        do { try process.run() } catch { return nil }
+        // Bound the wait — daemon may be slow.
+        let deadline = Date().addingTimeInterval(2)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if process.isRunning { process.terminate(); return nil }
+        guard process.terminationStatus == 0 else { return nil }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let temps = obj["temperatures"] as? [String: Any]
+        else { return nil }
+        // Aggregate by family — average the multiple p-core / gpu sensors
+        // so the UI doesn't get spammed with TP01/TP02/...
+        var pCores: [Double] = []
+        var eCores: [Double] = []
+        var gpu: [Double] = []
+        var others: [String: Double] = [:]
+        for (k, v) in temps {
+            guard let val = (v as? NSNumber)?.doubleValue else { continue }
+            if k.hasPrefix("Tp") || k.hasPrefix("TP") {
+                pCores.append(val)
+            } else if k.hasPrefix("Te") || k.hasPrefix("TE") {
+                eCores.append(val)
+            } else if k.hasPrefix("Tg") || k.hasPrefix("TG") {
+                gpu.append(val)
+            } else if k == "TB0T" { others["battery"] = val }
+            else if k == "TaLP" || k == "TAOL" { others["ambient"] = val }
+            else if k == "TS0P" { others["ssd"] = val }
+        }
+        if !pCores.isEmpty { others["cpu_p_cores"] = pCores.reduce(0, +) / Double(pCores.count) }
+        if !eCores.isEmpty { others["cpu_e_cores"] = eCores.reduce(0, +) / Double(eCores.count) }
+        if !gpu.isEmpty    { others["gpu"]         = gpu.reduce(0, +) / Double(gpu.count) }
+        return others.isEmpty ? nil : others
     }
 
     private func readKey(_ key: String) -> Double? {

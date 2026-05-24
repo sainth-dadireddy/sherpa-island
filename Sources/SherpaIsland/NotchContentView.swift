@@ -15,7 +15,11 @@ struct NotchContentView: View {
 
     /// Thermal + fan UI state — owned here so polling pauses with the
     /// panel's lifecycle (closing the notch tears them down).
-    @StateObject private var temps = TemperatureMonitor()
+    @StateObject private var temps: TemperatureMonitor = {
+        let m = TemperatureMonitor()
+        m.startMonitoring(interval: 5)
+        return m
+    }()
     @StateObject private var fans = FanController()
     @StateObject private var power = PowerMonitor()
     @State private var lastThermalSpoken: String = ""
@@ -1778,14 +1782,21 @@ struct NotchContentView: View {
     private var thermalSection: some View {
         let tempPairs = temps.sensors.sorted { $0.value > $1.value }
         if !tempPairs.isEmpty || fans.leftFanRPM > 0 || fans.rightFanRPM > 0 {
-            VStack(alignment: .leading, spacing: 6) {
-                sectionLabel("Thermal", count: tempPairs.count)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    sectionLabel("Thermal", count: tempPairs.count)
+                    Spacer()
+                    thermalManualButtons
+                }
+                if let hottest = tempPairs.first {
+                    thermalHeroGauge(label: hottest.key, value: hottest.value)
+                }
                 LazyVGrid(
                     columns: [GridItem(.adaptive(minimum: 92), spacing: 6)],
                     alignment: .leading,
                     spacing: 6
                 ) {
-                    ForEach(Array(tempPairs.prefix(6)), id: \.key) { pair in
+                    ForEach(Array(tempPairs.dropFirst().prefix(5)), id: \.key) { pair in
                         thermalChip(label: pair.key, value: pair.value)
                     }
                 }
@@ -1823,6 +1834,111 @@ struct NotchContentView: View {
         }
     }
 
+    /// Large animated gauge for the hottest sensor — big number + a
+    /// horizontal bar that fills 0-100°C with a color gradient.
+    private func thermalHeroGauge(label: String, value: Double) -> some View {
+        let color = thermalColor(value)
+        let fraction = min(1.0, max(0.0, value / 100.0))
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "thermometer.medium")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(color)
+                Text(String(format: "%.0f°C", value))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.4), value: value)
+                Text(thermalShort(label))
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.55))
+                Spacer()
+                Text(thermalBandLabel(value))
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .foregroundColor(color)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(color.opacity(0.18)))
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.08))
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [.green, .yellow, .orange, .red],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: geo.size.width * fraction)
+                        .animation(.easeOut(duration: 0.5), value: fraction)
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+    }
+
+    private func thermalBandLabel(_ c: Double) -> String {
+        if c < 60 { return "COOL" }
+        if c < 80 { return "WARM" }
+        if c < 95 { return "HOT" }
+        return "CRIT"
+    }
+
+    /// Manual "Blow Max" + "Auto" buttons, only when thermalforge is
+    /// installed AND the user added passwordless sudo for it.
+    @ViewBuilder
+    private var thermalManualButtons: some View {
+        let path = Self.thermalForgePath()
+        if let path {
+            HStack(spacing: 6) {
+                Button {
+                    runShell("sudo \(path) max", label: "manual-max")
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "wind")
+                        Text("Blow")
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.55))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.red.opacity(0.14)))
+                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .help("Set both fans to max (\(path) max)")
+                Button {
+                    runShell("sudo \(path) auto", label: "manual-auto")
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.uturn.backward")
+                        Text("Auto")
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.75))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .help("Reset fans to Apple defaults (\(path) auto)")
+            }
+        }
+    }
+
+    private static func thermalForgePath() -> String? {
+        let candidates = ["/usr/local/bin/thermalforge", "/opt/homebrew/bin/thermalforge"]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
     private func thermalChip(label: String, value: Double) -> some View {
         let color = thermalColor(value)
         return HStack(spacing: 4) {
@@ -1830,7 +1946,7 @@ struct NotchContentView: View {
             Text(thermalShort(label))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.75))
-            Text(String(format: "%.0f%%", value))
+            Text(String(format: "%.0f°C", value))
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(color)
                 .monospacedDigit()
@@ -1912,8 +2028,8 @@ struct NotchContentView: View {
     }
 
     private func thermalColor(_ celsius: Double) -> Color {
-        if celsius < 55 { return .green }
-        if celsius < 75 { return .yellow }
+        if celsius < 60 { return .green }
+        if celsius < 80 { return .yellow }
         return Color(red: 1.0, green: 0.4, blue: 0.4)
     }
 
@@ -1935,9 +2051,9 @@ struct NotchContentView: View {
         guard let hottest = temps.sensors.max(by: { $0.value < $1.value }) else { return }
         let band: String
         switch hottest.value {
-        case ..<55:  band = "cool"
-        case 55..<75: band = "warm"
-        case 75..<85: band = "hot"
+        case ..<60:  band = "cool"
+        case 60..<80: band = "warm"
+        case 80..<95: band = "hot"
         default:      band = "critical"
         }
         guard band != lastThermalSpoken else { return }
@@ -4161,7 +4277,7 @@ struct NotchContentView: View {
                 Image(systemName: "thermometer.medium")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(color)
-                Text(String(format: "%.0f%%", hottest))
+                Text(String(format: "%.0f°", hottest))
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundColor(color)
                     .monospacedDigit()
@@ -4172,7 +4288,7 @@ struct NotchContentView: View {
             .padding(.vertical, 4)
             .background(Capsule().fill(color.opacity(0.14)))
             .overlay(Capsule().stroke(color.opacity(0.35), lineWidth: 0.5))
-            .help("Thermal load (0-100%) — derived from macOS thermal-pressure label. Real Celsius requires a paid signed helper (CleanMyMac, TG Pro, MFC Pro). Tap to see all sensors.")
+            .help("Hottest sensor right now (real °C via ThermalForge SMC reads). Tap to see all temps + fans.")
         }
     }
 
