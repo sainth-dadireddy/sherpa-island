@@ -320,6 +320,16 @@ final class BuddyPreferences: ObservableObject {
         }
     }
 
+    /// Shell command run when temperature drops back to cool/warm from
+    /// hot or critical — undo whatever the escalation did. Example:
+    /// `sudo pmset -b lowpowermode 1 && sudo thermalforge fan set auto`
+    /// to re-enable battery saving and stop force-ramping fans.
+    @Published var coolDownActionCommand: String {
+        didSet {
+            UserDefaults.standard.set(coolDownActionCommand, forKey: Self.coolDownActionKey)
+        }
+    }
+
     /// Returns true iff the master toggle is on AND this specific event's
     /// flag is on. Use this at every `speak` call site.
     func voiceAllows(_ event: VoiceEvent) -> Bool {
@@ -422,6 +432,7 @@ final class BuddyPreferences: ObservableObject {
     private static let voiceRateKey = "sherpaisland.voice.rate"
     private static let thermalActionKey = "sherpaisland.thermal.action"
     private static let lowPowerActionKey = "sherpaisland.thermal.lpm_off_action"
+    private static let coolDownActionKey = "sherpaisland.thermal.cooldown_action"
     private static let alwaysVisibleKey = "sherpaisland.alwaysVisible"
     private static let startAtLoginKey = "sherpaisland.startAtLogin"
     private static let hapticsKey = "sherpaisland.haptics"
@@ -451,6 +462,7 @@ final class BuddyPreferences: ObservableObject {
         voiceRate = defaults.object(forKey: Self.voiceRateKey) as? Double ?? 1.05
         thermalActionCommand = defaults.string(forKey: Self.thermalActionKey) ?? ""
         lowPowerActionCommand = defaults.string(forKey: Self.lowPowerActionKey) ?? ""
+        coolDownActionCommand = defaults.string(forKey: Self.coolDownActionKey) ?? ""
         alwaysVisible = defaults.object(forKey: Self.alwaysVisibleKey) as? Bool ?? true
         startAtLogin = defaults.object(forKey: Self.startAtLoginKey) as? Bool ?? true
         hapticsEnabled = defaults.object(forKey: Self.hapticsKey) as? Bool ?? true

@@ -1893,15 +1893,21 @@ struct NotchContentView: View {
     /// the hottest sensor crosses into the hot/critical band. Throttled
     /// inside announceThermalIfNeeded (band change required).
     private func runThermalAction(reason: String) {
-        let cmd = prefs.thermalActionCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cmd.isEmpty else { return }
+        runShell(prefs.thermalActionCommand, label: "thermal-\(reason)")
+    }
+
+    /// Generic shell-out helper used by the thermal automation rules.
+    /// Empty strings no-op so each command is optional.
+    private func runShell(_ cmd: String, label: String) {
+        let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         let task = Process()
         task.launchPath = "/bin/zsh"
-        task.arguments = ["-lc", cmd]
+        task.arguments = ["-lc", trimmed]
         task.standardOutput = Pipe()
         task.standardError = Pipe()
         do { try task.run() } catch {
-            NSLog("[SherpaIsland] thermal action failed: \(error) — reason: \(reason)")
+            NSLog("[SherpaIsland] action[%@] failed: %@", label, "\(error)")
         }
     }
 
@@ -1935,10 +1941,25 @@ struct NotchContentView: View {
         default:      band = "critical"
         }
         guard band != lastThermalSpoken else { return }
+        let previous = lastThermalSpoken
         lastThermalSpoken = band
         // Reset the LPM-spoken latch whenever we drop back to cool/warm
         // so the next hot-band crossing can speak again.
         if band == "cool" || band == "warm" { lastLPMSpoken = false }
+
+        // Deescalation: if we were hot/critical and just dropped back
+        // to cool/warm, run the user's cool-down command (undo fan +
+        // power-mode escalation).
+        let wasEscalated = previous == "hot" || previous == "critical"
+        let nowCool = band == "cool" || band == "warm"
+        if wasEscalated && nowCool {
+            VoiceAnnouncer.shared.speak(
+                "Temperature back to normal. Restoring fan and power profile.",
+                event: .modeChange,
+                prefs: prefs
+            )
+            runShell(prefs.coolDownActionCommand, label: "cooldown")
+        }
         if band == "hot" {
             VoiceAnnouncer.shared.speak(
                 "Temperature warm. Fans ramping up.",
@@ -1970,16 +1991,7 @@ struct NotchContentView: View {
             event: .modeChange,
             prefs: prefs
         )
-        let cmd = prefs.lowPowerActionCommand.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cmd.isEmpty else { return }
-        let task = Process()
-        task.launchPath = "/bin/zsh"
-        task.arguments = ["-lc", cmd]
-        task.standardOutput = Pipe()
-        task.standardError = Pipe()
-        do { try task.run() } catch {
-            NSLog("[SherpaIsland] lpm-off action failed: \(error) reason=\(reason)")
-        }
+        runShell(prefs.lowPowerActionCommand, label: "lpm-off-\(reason)")
     }
 
     // MARK: - Recent (archived) sessions
