@@ -47,12 +47,32 @@ final class VoiceAnnouncer {
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate * Float(rateMul)
         utterance.pitchMultiplier = 1.0
         utterance.volume = 0.85
-        let chosen = prefs.voiceIdentifier.isEmpty
-            ? nil
-            : AVSpeechSynthesisVoice(identifier: prefs.voiceIdentifier)
-        utterance.voice = chosen
-            ?? AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Ava")
-            ?? AVSpeechSynthesisVoice(language: "en-US")
+        utterance.voice = resolveVoice(identifier: prefs.voiceIdentifier)
         return utterance
+    }
+
+    /// Voice resolution chain:
+    ///   1. The explicit identifier the user picked (if set + installed)
+    ///   2. A "Siri" voice (whatever variant the system shipped)
+    ///   3. Premium Ava (legacy default)
+    ///   4. Any en-US voice
+    static func resolveVoice(identifier: String) -> AVSpeechSynthesisVoice? {
+        if !identifier.isEmpty,
+           let exact = AVSpeechSynthesisVoice(identifier: identifier) {
+            return exact
+        }
+        let voices = AVSpeechSynthesisVoice.speechVoices()
+        if let siri = voices.first(where: {
+            $0.identifier.localizedCaseInsensitiveContains("siri")
+                || $0.name.localizedCaseInsensitiveContains("siri")
+        }) {
+            return siri
+        }
+        return AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Ava")
+            ?? AVSpeechSynthesisVoice(language: "en-US")
+    }
+
+    func resolveVoice(identifier: String) -> AVSpeechSynthesisVoice? {
+        Self.resolveVoice(identifier: identifier)
     }
 }
