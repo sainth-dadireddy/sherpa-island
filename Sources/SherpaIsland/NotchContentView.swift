@@ -936,6 +936,7 @@ struct NotchContentView: View {
                     sessionsSection
                     heatmapSection
                     alwaysAllowedSection
+                    recentHooksSection
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
@@ -1661,6 +1662,55 @@ struct NotchContentView: View {
         let h12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
         let ampm = hour < 12 ? "AM" : "PM"
         return "\(h12) \(ampm) — \(count) \(suffix)"
+    }
+
+    // MARK: - Recent hook events
+
+    @ViewBuilder
+    private var recentHooksSection: some View {
+        if !hookBridge.recentEvents.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                sectionLabel("Recent Events", count: hookBridge.recentEvents.count)
+                VStack(spacing: 4) {
+                    ForEach(hookBridge.recentEvents) { ev in
+                        recentHookRow(ev)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recentHookRow(_ ev: HookBridge.RecentHookEvent) -> some View {
+        let (icon, color): (String, Color) = ev.kind == "mode"
+            ? ("slider.horizontal.3", Color(red: 1.00, green: 0.85, blue: 0.45))
+            : ("hand.raised.fill",    Color(red: 0.55, green: 0.85, blue: 0.95))
+        let project = ev.cwd.isEmpty ? "—" : (ev.cwd as NSString).lastPathComponent
+        return HStack(alignment: .center, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundColor(color)
+                .frame(width: 14)
+            Text(project)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+            Text(ev.summary)
+                .font(.system(size: 10, design: .rounded))
+                .foregroundColor(.white.opacity(0.5))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 4)
+            Text(relativeTime(ev.timestamp))
+                .font(.system(size: 9, design: .rounded))
+                .foregroundColor(.white.opacity(0.35))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.04))
+        )
     }
 
     // MARK: - Always-allowed section

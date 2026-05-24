@@ -43,6 +43,33 @@ final class HookBridge: ObservableObject {
     /// finds the claude PID.
     @Published private(set) var sessionPIDs: [String: Int32] = [:]
 
+    /// Compact ring buffer of the last few hook events. Surfaced in
+    /// the expanded notch so the user can see what Claude Code just
+    /// asked permission for or which session changed mode.
+    @Published private(set) var recentEvents: [RecentHookEvent] = []
+    private let recentEventCap = 8
+
+    struct RecentHookEvent: Identifiable, Equatable {
+        let id = UUID()
+        let timestamp: Date
+        let kind: String   // "permission" | "mode"
+        let cwd: String
+        let summary: String
+    }
+
+    private func appendRecentEvent(_ kind: String, cwd: String, summary: String) {
+        let ev = RecentHookEvent(
+            timestamp: Date(),
+            kind: kind,
+            cwd: cwd,
+            summary: summary
+        )
+        var next = recentEvents
+        next.insert(ev, at: 0)
+        if next.count > recentEventCap { next.removeLast(next.count - recentEventCap) }
+        recentEvents = next
+    }
+
     private let server = SocketServer()
     private let socketPath: String
     private let settingsPath: String
@@ -149,6 +176,7 @@ final class HookBridge: ObservableObject {
         guard !rawMode.isEmpty else { return }
         if liveModes[cwd] != rawMode {
             liveModes[cwd] = rawMode
+            appendRecentEvent("mode", cwd: cwd, summary: "→ \(rawMode)")
         }
     }
 
@@ -166,10 +194,12 @@ final class HookBridge: ObservableObject {
 
         // Global always-allow list.
         if alwaysAllowedTools.contains(toolName) {
+            appendRecentEvent("permission", cwd: cwd, summary: "auto-allow \(toolName)")
             respond(SocketServer.Response(payload: ["behavior": "allow"]))
             return
         }
 
+        appendRecentEvent("permission", cwd: cwd, summary: "ask \(toolName)")
         // Append to the queue. The current head stays shown until the
         // user resolves it — the new one just waits its turn.
         pendingPermissions.append(PendingPermission(
