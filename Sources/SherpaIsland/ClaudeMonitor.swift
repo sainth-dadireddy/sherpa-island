@@ -217,10 +217,16 @@ final class ClaudeMonitor: ObservableObject {
 
         var result: [ClaudeSession] = []
         for (cwd, group) in grouped {
-            let capacity = liveCwdCounts[cwd] ?? 0
-            guard capacity > 0 else { continue }
+            // Match liveCwdCounts loosely: a claude proc launched in /Users/sai
+            // can host a session whose jsonl cwd is /Users/sai/CLAUDE/x because
+            // the user `cd`'d deeper after launching. Accept prefix matches in
+            // either direction.
+            let matchKey = liveCwdCounts.keys.first { key in
+                cwd == key || cwd.hasPrefix(key + "/") || key.hasPrefix(cwd + "/")
+            }
+            guard let matchKey, let capacity = liveCwdCounts[matchKey], capacity > 0 else { continue }
             let sorted = group.sorted { $0.lastActivity > $1.lastActivity }
-            let pids = lastLiveClaudePIDs[cwd] ?? []
+            let pids = lastLiveClaudePIDs[matchKey] ?? []
             for (idx, c) in sorted.prefix(capacity).enumerated() {
                 let isActive = now.timeIntervalSince(c.lastActivity) < activeThreshold
                 // Use sticky cached values so the UI's context ring
