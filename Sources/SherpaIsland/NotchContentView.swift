@@ -3883,7 +3883,11 @@ struct NotchContentView: View {
                 activitySparkline(for: s)
             }
 
-            modeBadge(hookBridge.liveModes[s.cwd] ?? s.nativeMode)
+            // Prefer the jsonl-derived nativeMode — it's refreshed every
+            // monitor tick (~1s) and is ground truth. Fall back to the
+            // hookBridge live cache when nativeMode is empty (e.g. the
+            // latest jsonl entry doesn't carry permissionMode yet).
+            modeBadge(s.nativeMode.isEmpty ? (hookBridge.liveModes[s.cwd] ?? "") : s.nativeMode)
 
             Button {
                 if !s.cwd.isEmpty {
