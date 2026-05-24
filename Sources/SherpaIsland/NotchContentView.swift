@@ -3870,6 +3870,16 @@ struct NotchContentView: View {
 
     // MARK: - Session row
 
+    /// Dim long-idle rows so the eye lands on active sessions first.
+    /// Pinned sessions stay full opacity regardless of idleness.
+    private func rowOpacity(for s: ClaudeSession) -> Double {
+        if isPinned(s.cwd) { return 1.0 }
+        let idle = Date().timeIntervalSince(s.lastActivity)
+        if idle < 30 * 60 { return 1.0 }     // hot
+        if idle < 60 * 60 { return 0.75 }    // cooling
+        return 0.5                            // stale
+    }
+
     private func sessionRow(_ s: ClaudeSession) -> some View {
         Button {
             inspectedSession = s
@@ -3877,6 +3887,7 @@ struct NotchContentView: View {
             sessionRowContent(s)
         }
         .buttonStyle(.plain)
+        .opacity(rowOpacity(for: s))
         .help("Click to see what this session is up to")
         .contextMenu {
             Button(isPinned(s.cwd) ? "Unpin from top" : "Pin to top") {
