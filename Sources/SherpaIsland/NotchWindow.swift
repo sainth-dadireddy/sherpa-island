@@ -129,11 +129,15 @@ final class NotchWindow: NSPanel {
         // Use screenSaver level (1000) so the notch floats above any
         // app's full-screen Space. Lower levels (statusBar=25, popUpMenu=101)
         // get clipped behind full-screen windows on macOS Sequoia+.
-        self.level = .screenSaver
+        // CGShieldingWindowLevel sits above ALL ordinary windows
+        // including full-screen apps' content. screenSaver (1000) is
+        // sometimes clipped by Sequoia's full-screen compositor; this
+        // raw level guarantees we're on top.
+        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         self.isMovable = false
         self.ignoresMouseEvents = false
         self.acceptsMouseMovedEvents = true
-        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
         self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
 
@@ -207,13 +211,16 @@ final class NotchWindow: NSPanel {
         // running claude process — brings us on screen.
     }
 
-    // Never become the key window. `.nonactivatingPanel` already stops
-    // the panel from activating our app on click. We allow canBecomeKey
-    // = true and set `becomesKeyOnlyIfNeeded = true` (in init) so the
-    // panel only takes keyboard focus when the user clicks something
-    // that actually needs it (text field, etc). Clicking inert pill
-    // area or buttons does NOT steal focus from the underlying editor.
-    override var canBecomeKey: Bool { true }
+    // Never become the key window. `.nonactivatingPanel` plus this
+    // override keeps the panel from activating our app on click AND
+    // from claiming keyboard focus over whatever else (editor /
+    // terminal) had it. canBecomeKey = true broke fullscreen
+    // visibility because macOS treats focus-eligible panels with
+    // `.fullScreenAuxiliary` differently across Spaces, so we revert
+    // to false. Side effect: typing into the filter TextField doesn't
+    // work — accepted trade-off for keeping the notch visible over
+    // any app's fullscreen.
+    override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     // MARK: - Frame helpers
@@ -759,9 +766,13 @@ final class SnapPreviewWindow: NSPanel {
         // Use screenSaver level (1000) so the notch floats above any
         // app's full-screen Space. Lower levels (statusBar=25, popUpMenu=101)
         // get clipped behind full-screen windows on macOS Sequoia+.
-        self.level = .screenSaver
+        // CGShieldingWindowLevel sits above ALL ordinary windows
+        // including full-screen apps' content. screenSaver (1000) is
+        // sometimes clipped by Sequoia's full-screen compositor; this
+        // raw level guarantees we're on top.
+        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         self.ignoresMouseEvents = true
-        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
         self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
         host.autoresizingMask = [.width, .height]
