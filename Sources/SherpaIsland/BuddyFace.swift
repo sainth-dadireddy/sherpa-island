@@ -561,8 +561,8 @@ private struct PulseBuddy: View {
         switch mode {
         case .shocked:                       return shockColor
         case .active, .curious:              return color.base
-        case .focused, .content, .idle:      return color.base.opacity(0.85)
-        case .sleeping:                      return color.base.opacity(0.35)
+        case .focused, .content, .idle:      return color.base.opacity(0.9)
+        case .sleeping:                      return color.base.opacity(0.4)
         }
     }
 
