@@ -940,7 +940,6 @@ struct NotchContentView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     sessionsSection
                     heatmapSection
-                    alwaysAllowedSection
                     recentHooksSection
                 }
                 .padding(.horizontal, 18)
@@ -2389,6 +2388,8 @@ struct NotchContentView: View {
             // below with the full breakdown.
             usagePill
 
+            costPill
+
             Spacer(minLength: 4)
 
             statBadge
@@ -2455,6 +2456,48 @@ struct NotchContentView: View {
         .buttonStyle(.plain)
         .help("Click for usage details")
         .onAppear { usage.refreshIfNeeded() }
+    }
+
+    /// Tiny "today $ retail" pill that sits next to the 5h usage pill.
+    /// Same click target as the hourglass — opens the usage detail
+    /// popover. Hidden when today's token total is zero so the header
+    /// stays clean on fresh launches.
+    private var costPill: some View {
+        let totalTokens =
+            usage.today.inputTokens +
+            usage.today.outputTokens +
+            usage.today.cacheReadTokens +
+            usage.today.cacheCreationTokens
+        return Group {
+            if totalTokens > 0 {
+                Button {
+                    usageDetailShown.toggle()
+                    if usageDetailShown { usage.refreshIfNeeded() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "dollarsign.circle")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.55))
+                        Text(estimatedRetailCost(usage.today))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
+                    )
+                }
+                .buttonStyle(.plain)
+                .help("Today's tokens at Opus retail rates — Max sub pays $0. Click for breakdown.")
+            }
+        }
     }
 
     @ViewBuilder
