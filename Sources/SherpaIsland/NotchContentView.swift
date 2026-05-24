@@ -4071,6 +4071,15 @@ struct NotchContentView: View {
                             .monospacedDigit()
                             .help("Resident memory of the matched claude process")
                     }
+                    if let usd = SessionCost.costToday(jsonlPath: "\(s.projectPath)/\(s.id).jsonl"),
+                       usd >= 0.01 {
+                        Circle().fill(Color.white.opacity(0.2)).frame(width: 2, height: 2)
+                        Text(usd < 10 ? String(format: "$%.2f", usd) : String(format: "$%.1f", usd))
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.55))
+                            .monospacedDigit()
+                            .help("Equivalent retail spend today for this session (Opus rates). Max sub = $0 actual.")
+                    }
                     if s.contextTokens > 0 && s.contextWindow > 0 {
                         contextFillBar(used: s.contextTokens, window: s.contextWindow)
                     } else {
