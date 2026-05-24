@@ -1620,7 +1620,35 @@ struct NotchContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            Color.clear
+            // No hour hovered — show the day's top projects so the
+            // section always communicates *something*.
+            let top = heatmap.topProjectsToday(limit: 5)
+            if top.isEmpty {
+                Color.clear
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(top, id: \.name) { entry in
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(accent.opacity(0.7))
+                                    .frame(width: 5, height: 5)
+                                Text(entry.name)
+                                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.75))
+                                Text("·")
+                                    .font(.system(size: 10, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.3))
+                                Text("\(entry.count)")
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .foregroundColor(.white.opacity(0.55))
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 
@@ -2372,14 +2400,21 @@ struct NotchContentView: View {
                     Text("Sherpa Island")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .fixedSize()
                     Text("v\(updateChecker.currentVersion)")
                         .font(.system(size: 10, weight: .medium, design: .rounded))
                         .foregroundColor(accent.opacity(0.6))
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 Text(headerSubtitle)
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.5))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 4)
 
@@ -2474,28 +2509,21 @@ struct NotchContentView: View {
                     usageDetailShown.toggle()
                     if usageDetailShown { usage.refreshIfNeeded() }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "dollarsign.circle")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.55))
-                        Text(estimatedRetailCost(usage.today))
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundColor(.white.opacity(0.85))
-                            .monospacedDigit()
-                    }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        Capsule(style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                    )
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.5)
-                    )
+                    Text(estimatedRetailCost(usage.today))
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white.opacity(0.75))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.white.opacity(0.05))
+                        )
                 }
                 .buttonStyle(.plain)
-                .help("Today's tokens at Opus retail rates — Max sub pays $0. Click for breakdown.")
+                .help("Equivalent retail spend today (Opus rates). Max sub = $0 actual. Click for breakdown.")
             }
         }
     }
@@ -2513,6 +2541,8 @@ struct NotchContentView: View {
             Text(verbatim: "· 5h")
                 .font(.system(size: 9, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.45))
+                .lineLimit(1)
+                .fixedSize()
         } else {
             // Fallback: raw message count from jsonls when we can't
             // reach the API (offline, not signed in, etc.).
@@ -2525,6 +2555,8 @@ struct NotchContentView: View {
             Text(verbatim: "· 5h")
                 .font(.system(size: 9, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.45))
+                .lineLimit(1)
+                .fixedSize()
         }
     }
 
@@ -3796,18 +3828,24 @@ struct NotchContentView: View {
     }
 
     private var statBadge: some View {
-        HStack(spacing: 6) {
+        let total = monitor.sessions.count
+        return HStack(spacing: 6) {
             Circle()
-                .fill(activeCount > 0 ? accent : Color.white.opacity(0.3))
+                .fill(activeCount > 0 ? accent : (total > 0 ? Color.white.opacity(0.55) : Color.white.opacity(0.25)))
                 .frame(width: 6, height: 6)
-            Text("\(activeCount) / \(monitor.sessions.count)")
+            Text("\(total)")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.75))
+                .foregroundColor(.white.opacity(0.85))
                 .monospacedDigit()
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.white.opacity(0.06)))
+        .help(
+            total == 0
+                ? "No live Claude sessions"
+                : "\(total) live session\(total == 1 ? "" : "s") — \(activeCount) currently working, \(total - activeCount) waiting"
+        )
     }
 
     private var headerSubtitle: String {

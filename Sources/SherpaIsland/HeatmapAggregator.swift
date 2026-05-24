@@ -91,6 +91,23 @@ final class HeatmapAggregator: ObservableObject {
             .sorted { $0.count > $1.count }
     }
 
+    /// Top N projects across the whole viewing day, by event count.
+    /// Used by the heatmap project row when no hour is hovered, so
+    /// the panel always shows something useful below the strip.
+    func topProjectsToday(limit: Int = 5) -> [(name: String, count: Int)] {
+        var totals: [String: Int] = [:]
+        for hourMap in hourlyProjects {
+            for (name, count) in hourMap {
+                totals[name, default: 0] += count
+            }
+        }
+        return totals
+            .map { (name: $0.key, count: $0.value) }
+            .sorted { $0.count > $1.count }
+            .prefix(limit)
+            .map { $0 }
+    }
+
     // MARK: - Scan (runs off main)
 
     private nonisolated static func scan(day: Date) -> (
