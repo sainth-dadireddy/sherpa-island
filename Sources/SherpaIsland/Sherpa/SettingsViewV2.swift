@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct SettingsViewV2: View {
-    @AppStorage("sherpa.useSherpaOrganizer") var useSherpaOrganizer = false
     @AppStorage("sherpa.accentColorName") var accentColorName = "blue"
     @AppStorage("sherpa.glassIntensity") var glassIntensity = "ultraThin"
     @AppStorage("sherpa.notchOpacity") var notchOpacity = 1.0
@@ -13,70 +12,26 @@ struct SettingsViewV2: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            layoutTab
-                .tabItem {
-                    Label("Layout", systemImage: "square.grid.2x2")
-                }
-                .tag(0)
-
             themeTab
                 .tabItem {
                     Label("Theme", systemImage: "paintpalette.fill")
                 }
-                .tag(1)
+                .tag(0)
 
             voiceAndSoundsTab
                 .tabItem {
                     Label("Voice & Sounds", systemImage: "speaker.wave.3")
                 }
-                .tag(2)
+                .tag(1)
 
             animationTab
                 .tabItem {
                     Label("Animation", systemImage: "sparkles")
                 }
-                .tag(3)
+                .tag(2)
         }
         .frame(width: 500, height: 400)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: - Layout Tab
-    private var layoutTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text("Use Sherpa Island Layout")
-                        .font(.system(.body, design: .default))
-                    Spacer()
-                    Toggle("", isOn: $useSherpaOrganizer)
-                }
-                .padding(.vertical, 6)
-
-                Divider()
-                    .foregroundColor(Color(nsColor: .separatorColor))
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Off = classic layout")
-                        .font(.system(.caption, design: .default))
-                        .foregroundColor(.secondary)
-                    Text("On = tabbed Claude/System/Media organizer")
-                        .font(.system(.caption, design: .default))
-                        .foregroundColor(.secondary)
-                }
-
-                Divider()
-                    .foregroundColor(Color(nsColor: .separatorColor))
-
-                Text("Changes take effect immediately")
-                    .font(.system(.caption2, design: .default))
-                    .foregroundStyle(.tertiary)
-            }
-
-            Spacer()
-        }
-        .padding(16)
-        .background(Material.ultraThin)
     }
 
     // MARK: - Theme Tab

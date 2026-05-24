@@ -113,23 +113,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(withTitle: "Sherpa Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(NSMenuItem.separator())
-
-        let toggle = NSMenuItem(title: "Use Sherpa Layout", action: #selector(toggleSherpaLayout), keyEquivalent: "")
-        toggle.state = UserDefaults.standard.bool(forKey: "sherpa.useSherpaOrganizer") ? .on : .off
-        toggle.target = self
-        menu.addItem(toggle)
-
-        menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit Sherpa Island", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
 
         item.menu = menu
         self.statusItem = item
-    }
-
-    @objc private func toggleSherpaLayout(_ sender: NSMenuItem) {
-        let current = UserDefaults.standard.bool(forKey: "sherpa.useSherpaOrganizer")
-        UserDefaults.standard.set(!current, forKey: "sherpa.useSherpaOrganizer")
-        sender.state = !current ? .on : .off
     }
 
     @objc private func openSettings() {

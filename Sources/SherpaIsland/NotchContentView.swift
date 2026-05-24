@@ -68,12 +68,6 @@ struct NotchContentView: View {
     /// dropped out of `monitor.sessions` in the newer snapshot).
     @State private var previousSessions: [String: ClaudeSession] = [:]
 
-    // MARK: - Sherpa Island v0.2 integration
-    /// Switch between original Notch-Pilot UI and Sherpa Island NotchOrganizer.
-    /// Toggle in code or via future Settings panel.
-    @AppStorage("sherpa.useSherpaOrganizer") private var useSherpaOrganizer: Bool = false
-    @StateObject private var autoModeSwitcher = AutoModeSwitcher()
-
     private let fadeOutDuration: TimeInterval = 10
 
     private let leftSectionWidth: CGFloat = 56
@@ -409,18 +403,11 @@ struct NotchContentView: View {
                             .combined(with: .opacity)
                         )
                 } else if expanded {
-                    Group {
-                        if useSherpaOrganizer {
-                            NotchOrganizer(autoMode: autoModeSwitcher)
-                                .frame(width: expandedWidth, height: expandedHeight)
-                        } else {
-                            expandedPanel
-                        }
-                    }
-                    .transition(
-                        .scale(scale: 0.04, anchor: expandedNotchAnchor)
-                        .combined(with: .opacity)
-                    )
+                    expandedPanel
+                        .transition(
+                            .scale(scale: 0.04, anchor: expandedNotchAnchor)
+                            .combined(with: .opacity)
+                        )
                 } else if let speech = speechController.current {
                     speechPill(speech)
                         .transition(
