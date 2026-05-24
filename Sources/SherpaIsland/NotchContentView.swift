@@ -2933,6 +2933,26 @@ struct NotchContentView: View {
                 .foregroundColor(color.opacity(0.85))
                 .monospacedDigit()
                 .help("Context window: \(formatTokens(used)) / \(formatTokens(window))")
+            if fraction >= 0.65 {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString("/compact", forType: .string)
+                } label: {
+                    Text("/compact")
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .foregroundColor(color.opacity(0.95))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(
+                            Capsule().fill(color.opacity(0.18))
+                        )
+                        .overlay(
+                            Capsule().stroke(color.opacity(0.4), lineWidth: 0.5)
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Context approaching cap. Click to copy `/compact` to clipboard — paste in your terminal.")
+            }
         }
     }
 
