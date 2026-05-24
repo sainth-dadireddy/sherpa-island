@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -13,6 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updateChecker = UpdateChecker()
     private let hotkeys = GlobalHotkeys()
     private var mouseMonitor: MouseMonitor?
+
+    // Sherpa Island v0.2 additions
+    private var statusItem: NSStatusItem?
+    private var settingsWindow: NSWindow?
 
     /// UserDefaults key — set to `true` after the onboarding sequence
     /// completes so future launches skip it.
@@ -30,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateChecker.startPeriodicChecks()
         usage.startPeriodicRefresh()
         setupHotkeys()
+        setupStatusItem()
 
         // Force the onboarding on every launch when the debug env var
         // is set (useful for iterating on the intro animation without
@@ -93,6 +99,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.hotkeys.toggleCount += 1
         }
         hotkeys.start()
+    }
+
+    // MARK: - Sherpa Island v0.2: Menubar + Settings window
+
+    private func setupStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "mountain.2.fill", accessibilityDescription: "Sherpa Island")
+            button.image?.isTemplate = true
+        }
+
+        let menu = NSMenu()
+        menu.addItem(withTitle: "Sherpa Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(NSMenuItem.separator())
+
+        let toggle = NSMenuItem(title: "Use Sherpa Layout", action: #selector(toggleSherpaLayout), keyEquivalent: "")
+        toggle.state = UserDefaults.standard.bool(forKey: "sherpa.useSherpaOrganizer") ? .on : .off
+        toggle.target = self
+        menu.addItem(toggle)
+
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(withTitle: "Quit Sherpa Island", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
+
+        item.menu = menu
+        self.statusItem = item
+    }
+
+    @objc private func toggleSherpaLayout(_ sender: NSMenuItem) {
+        let current = UserDefaults.standard.bool(forKey: "sherpa.useSherpaOrganizer")
+        UserDefaults.standard.set(!current, forKey: "sherpa.useSherpaOrganizer")
+        sender.state = !current ? .on : .off
+    }
+
+    @objc private func openSettings() {
+        if let existing = settingsWindow {
+            existing.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        let host = NSHostingController(rootView: SettingsViewV2())
+        let win = NSWindow(contentViewController: host)
+        win.title = "Sherpa Island Settings"
+        win.styleMask = [.titled, .closable, .miniaturizable]
+        win.setContentSize(NSSize(width: 500, height: 400))
+        win.center()
+        win.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        self.settingsWindow = win
     }
 
     private static func notchGeometry() -> (width: CGFloat, height: CGFloat) {
