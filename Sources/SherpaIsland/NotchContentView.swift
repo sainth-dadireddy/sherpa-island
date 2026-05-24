@@ -543,6 +543,29 @@ struct NotchContentView: View {
             // don't spam every refresh tick.
             IdleNotifier.shared.evaluate(sessions: newSessions, pinnedCwds: pinnedCwds)
 
+            // Archive sessions that disappeared between this tick and
+            // the previous one — they exited or stopped writing.
+            let newIDs = Set(newSessions.map(\.id))
+            var archived = false
+            for (id, s) in previousSessionSnapshot where !newIDs.contains(id) {
+                let jsonl = "\(s.projectPath)/\(s.id).jsonl"
+                let usd = SessionCost.costToday(jsonlPath: jsonl) ?? 0
+                SessionArchive.append(ArchivedSession(
+                    id: s.id,
+                    projectName: s.projectName,
+                    cwd: s.cwd,
+                    model: s.model,
+                    closedAt: Date(),
+                    finalContextTokens: s.contextTokens,
+                    estimatedCostUSD: usd
+                ))
+                archived = true
+            }
+            if archived {
+                recentArchive = SessionArchive.load()
+            }
+            previousSessionSnapshot = Dictionary(uniqueKeysWithValues: newSessions.map { ($0.id, $0) })
+
             // Build the new set of active session IDs.
             let nowActive = Set(
                 newSessions.filter { !$0.shortStatus.isEmpty }.map(\.id)
@@ -941,6 +964,7 @@ struct NotchContentView: View {
                     sessionsSection
                     heatmapSection
                     recentHooksSection
+                    recentArchiveSection
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
@@ -1735,6 +1759,78 @@ struct NotchContentView: View {
         return "\(h12) \(ampm) — \(count) \(suffix)"
     }
 
+    // MARK: - Recent (archived) sessions
+
+    @ViewBuilder
+    private var recentArchiveSection: some View {
+        if !recentArchive.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    sectionLabel("Recent Sessions", count: recentArchive.count)
+                    Spacer()
+                    Button("Clear") {
+                        SessionArchive.save([])
+                        recentArchive = []
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.45))
+                }
+                VStack(spacing: 4) {
+                    ForEach(recentArchive) { entry in
+                        recentArchiveRow(entry)
+                    }
+                }
+            }
+        }
+    }
+
+    private func recentArchiveRow(_ e: ArchivedSession) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 9))
+                .foregroundColor(.white.opacity(0.4))
+                .frame(width: 14)
+            Text(e.projectName)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.7))
+                .lineLimit(1)
+            if !e.model.isEmpty {
+                Text(compactModelName(e.model))
+                    .font(.system(size: 9, design: .rounded))
+                    .foregroundColor(modelColor(e.model).opacity(0.8))
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            if e.estimatedCostUSD >= 0.01 {
+                Text(String(format: "$%.2f", e.estimatedCostUSD))
+                    .font(.system(size: 9, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .monospacedDigit()
+            }
+            Text(relativeTime(e.closedAt))
+                .font(.system(size: 9, design: .rounded))
+                .foregroundColor(.white.opacity(0.35))
+                .monospacedDigit()
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.cwd)])
+            } label: {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(3)
+            }
+            .buttonStyle(.plain)
+            .help("Reveal \(e.projectName) in Finder")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.white.opacity(0.025))
+        )
+    }
+
     // MARK: - Recent hook events
 
     @ViewBuilder
@@ -2441,6 +2537,16 @@ struct NotchContentView: View {
     /// Drag-drop UI state for the file-path drop receiver.
     @State private var isFileDropTargeted = false
     @State private var fileDropToast: String? = nil
+
+    /// Snapshot of session ids from the previous monitor tick, used
+    /// to detect when a session disappears (process exit / jsonl
+    /// stale) and archive it for the Recent section.
+    @State private var previousSessionSnapshot: [String: ClaudeSession] = [:]
+
+    /// In-memory mirror of the persisted recent-session archive. Loaded
+    /// on first render and refreshed every time we archive a new entry
+    /// so the Recent section updates without a relaunch.
+    @State private var recentArchive: [ArchivedSession] = SessionArchive.load()
 
     /// Click-to-toggle the usage card. When live API data is
     /// available we show the exact 5h utilization % (same number
