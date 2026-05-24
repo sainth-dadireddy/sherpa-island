@@ -4419,10 +4419,19 @@ struct NotchContentView: View {
             }
         }
 
-        // Cwd collision — fire when a session newly joins an existing cwd.
+        // Cwd collision — only fire when 2+ sessions BOTH have recent
+        // activity in the same cwd. The earlier prefix-match grouping
+        // in ClaudeMonitor can transiently put a brand-new session
+        // alongside a long-idle one with matching parsed.cwd, which
+        // would otherwise spam a false collision voice on launch.
         let oldCwdCounts = Dictionary(grouping: old, by: \.cwd).mapValues(\.count)
-        let newCwdCounts = Dictionary(grouping: new, by: \.cwd).mapValues(\.count)
-        for (cwd, count) in newCwdCounts where count > 1 {
+        let now = Date()
+        let newByCwd = Dictionary(grouping: new, by: \.cwd)
+        for (cwd, sessions) in newByCwd where sessions.count > 1 {
+            let recentCount = sessions.filter {
+                now.timeIntervalSince($0.lastActivity) < 60
+            }.count
+            guard recentCount >= 2 else { continue }
             let was = oldCwdCounts[cwd] ?? 0
             if was <= 1, !cwd.isEmpty {
                 let name = (cwd as NSString).lastPathComponent
@@ -4761,7 +4770,16 @@ struct NotchContentView: View {
     /// user notices before two terminals start fighting over the same
     /// files.
     private func cwdCollision(for s: ClaudeSession) -> String? {
-        let peers = monitor.sessions.filter { $0.cwd == s.cwd && $0.id != s.id }
+        // Only flag a collision when peer sessions are ACTIVELY in the
+        // same cwd within the last 5 minutes. Idle ghost rows that
+        // happen to share a cwd via the prefix-match grouping should
+        // not raise a false alarm.
+        let now = Date()
+        let peers = monitor.sessions.filter {
+            $0.cwd == s.cwd
+                && $0.id != s.id
+                && now.timeIntervalSince($0.lastActivity) < 5 * 60
+        }
         guard !peers.isEmpty else { return nil }
         let lines = peers.map { p -> String in
             let sid = String(p.id.prefix(8))
