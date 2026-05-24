@@ -16,10 +16,10 @@ enum BuddyStyle: String, CaseIterable, Identifiable {
         switch self {
         case .eyes:  return "Eyes"
         case .orb:   return "Orb"
-        case .bars:  return "Waves"
-        case .ghost: return "Ghost"
-        case .cat:   return "Cat"
-        case .bunny: return "Bunny"
+        case .bars:  return "Bars"
+        case .ghost: return "Pulse"
+        case .cat:   return "Wave"
+        case .bunny: return "Spark"
         }
     }
 }
@@ -90,9 +90,9 @@ struct BuddyFace: View {
             case .eyes:  EyesBuddy(mode: mode, size: size, color: effectiveColor)
             case .orb:   OrbBuddy(mode: mode, size: size, color: effectiveColor)
             case .bars:  BarsBuddy(mode: mode, size: size, color: effectiveColor)
-            case .ghost: GhostBuddy(mode: mode, size: size, color: effectiveColor)
-            case .cat:   CatBuddy(mode: mode, size: size, color: effectiveColor)
-            case .bunny: BunnyBuddy(mode: mode, size: size, color: effectiveColor)
+            case .ghost: PulseBuddy(mode: mode, size: size, color: effectiveColor)
+            case .cat:   WaveBuddy(mode: mode, size: size, color: effectiveColor)
+            case .bunny: SparkBuddy(mode: mode, size: size, color: effectiveColor)
             }
         }
         .id(effectiveStyle)
@@ -550,567 +550,207 @@ private struct BarsBuddy: View {
     }
 }
 
-// MARK: - Ghost (sway, float, startle)
+// MARK: - Pulse (concentric rings, rate + intensity track mode)
 
-struct GhostShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width
-        let h = rect.height
-        let waist = h * 0.78
-
-        p.move(to: CGPoint(x: 0, y: waist))
-        p.addQuadCurve(
-            to: CGPoint(x: w / 2, y: 0),
-            control: CGPoint(x: 0, y: 0)
-        )
-        p.addQuadCurve(
-            to: CGPoint(x: w, y: waist),
-            control: CGPoint(x: w, y: 0)
-        )
-
-        let bumpCount = 3
-        let bumpW = w / CGFloat(bumpCount)
-        for i in 0..<bumpCount {
-            let idx = bumpCount - 1 - i
-            let startX = CGFloat(idx + 1) * bumpW
-            let endX = CGFloat(idx) * bumpW
-            let midX = (startX + endX) / 2
-            p.addQuadCurve(
-                to: CGPoint(x: endX, y: waist),
-                control: CGPoint(x: midX, y: h)
-            )
-        }
-        p.closeSubpath()
-        return p
-    }
-}
-
-private struct GhostBuddy: View {
+private struct PulseBuddy: View {
     let mode: BuddyFace.Mode
     let size: CGFloat
     let color: BuddyColor
 
-    @State private var float: CGFloat = 0
-    @State private var sway: CGFloat = 0
-    @State private var startleScale: CGFloat = 1.0
-    @State private var blink = false
-    @State private var blinkTask: Task<Void, Never>?
+    private var fillColor: Color {
+        switch mode {
+        case .shocked:                       return shockColor
+        case .active, .curious:              return color.base
+        case .focused, .content, .idle:      return color.base.opacity(0.85)
+        case .sleeping:                      return color.base.opacity(0.35)
+        }
+    }
+
+    /// Higher = faster rings expand outward.
+    private var rate: Double {
+        switch mode {
+        case .shocked:  return 3.0
+        case .curious:  return 2.2
+        case .active:   return 1.5
+        case .focused:  return 0.8
+        case .content:  return 1.0
+        case .idle:     return 0.5
+        case .sleeping: return 0.15
+        }
+    }
+
+    private var ringCount: Int { mode == .sleeping ? 1 : 3 }
 
     var body: some View {
-        let w = size * 1.95
-        let h = size * 2.35
-
-        return ZStack {
-            GhostShape()
-                .fill(bodyColor(mode, color))
-                .overlay(
-                    GhostShape()
-                        .fill(
-                            LinearGradient(
-                                colors: [.white.opacity(0.28), .clear],
-                                startPoint: .top,
-                                endPoint: .center
-                            )
-                        )
-                        .blendMode(.plusLighter)
-                )
-                .shadow(
-                    color: mode == .shocked ? shockColor.opacity(0.6)
-                        : (mode == .active ? color.glow.opacity(0.5) : .clear),
-                    radius: size * 0.5
-                )
-                .frame(width: w, height: h)
-
-            HStack(spacing: size * 0.5) {
-                eye
-                eye
-            }
-            .offset(y: -size * 0.25)
-        }
-        .frame(width: w, height: h)
-        .scaleEffect(startleScale)
-        .offset(x: sway, y: float)
-        .onAppear { start() }
-        .onDisappear {
-            blinkTask?.cancel()
-            blinkTask = nil
-        }
-        .onChange(of: mode) { oldMode, newMode in
-            if (newMode == .curious || newMode == .shocked) && oldMode != newMode {
-                triggerStartle(intensity: newMode == .shocked ? 1.12 : 1.16)
-            }
-            start()
-        }
-    }
-
-    @ViewBuilder
-    private var eye: some View {
-        if mode == .sleeping || blink {
-            Capsule()
-                .fill(.white)
-                .frame(width: size * 0.32, height: 1.5)
-        } else {
-            Circle()
-                .fill(.white)
-                .frame(width: size * 0.36, height: size * 0.36)
-        }
-    }
-
-    private func start() {
-        blinkTask?.cancel()
-        float = 0
-        sway = 0
-        guard mode != .sleeping else { return }
-
-        // Shocked ghosts freeze in place — no float, no sway.
-        if mode == .shocked {
-            blinkTask = Task { @MainActor in
-                await runBlinkLoop(mode: mode) { self.blink = $0 }
-            }
-            return
-        }
-
-        // Vertical float
-        let floatAmt: CGFloat = mode == .active ? -2.6 : -1.4
-        let floatDur: Double = {
-            switch mode {
-            case .active:  return 1.3
-            case .curious: return 0.85
-            case .focused: return 2.8     // slow, concentrated bob
-            case .content: return 2.6
-            default:       return 2.0
-            }
-        }()
-        withAnimation(.easeInOut(duration: floatDur).repeatForever(autoreverses: true)) {
-            float = floatAmt
-        }
-
-        // Horizontal sway (different period so they don't sync)
-        let swayAmt: CGFloat = {
-            switch mode {
-            case .active:  return 2.2
-            case .curious: return 2.8
-            case .focused: return 0.6    // barely swaying
-            case .content: return 1.2
-            default:       return 1.6
-            }
-        }()
-        let swayDur: Double = floatDur * 1.6
-        withAnimation(.easeInOut(duration: swayDur).repeatForever(autoreverses: true)) {
-            sway = swayAmt
-        }
-
-        blinkTask = Task { @MainActor in
-            await runBlinkLoop(mode: mode) { self.blink = $0 }
-        }
-    }
-
-    private func triggerStartle(intensity: CGFloat) {
-        withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) {
-            startleScale = intensity
-        }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-                startleScale = 1.0
-            }
-        }
-    }
-}
-
-// MARK: - Cat (twitches, alert-back, contentment squint)
-
-struct TriangleShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        p.closeSubpath()
-        return p
-    }
-}
-
-private struct CatBuddy: View {
-    let mode: BuddyFace.Mode
-    let size: CGFloat
-    let color: BuddyColor
-
-    @State private var leftEar: Double = 0
-    @State private var rightEar: Double = 0
-    @State private var blink = false
-    @State private var blinkTask: Task<Void, Never>?
-    @State private var twitchTask: Task<Void, Never>?
-
-    var body: some View {
-        let head = size * 1.95
-        let earW = size * 0.72
-        let earH = size * 0.78
-
-        return ZStack {
-            Circle()
-                .fill(bodyColor(mode, color))
-                .frame(width: head, height: head)
-
-            TriangleShape()
-                .fill(bodyColor(mode, color))
-                .frame(width: earW, height: earH)
-                .rotationEffect(.degrees(leftEar), anchor: .bottom)
-                .offset(x: -head * 0.32, y: -head * 0.58)
-
-            TriangleShape()
-                .fill(bodyColor(mode, color))
-                .frame(width: earW, height: earH)
-                .rotationEffect(.degrees(rightEar), anchor: .bottom)
-                .offset(x: head * 0.32, y: -head * 0.58)
-
-            HStack(spacing: size * 0.52) {
-                eye
-                eye
-            }
-            .offset(y: -size * 0.08)
-
-            TriangleShape()
-                .fill(Color(red: 1.0, green: 0.78, blue: 0.84))
-                .frame(width: size * 0.22, height: size * 0.18)
-                .rotationEffect(.degrees(180))
-                .offset(y: size * 0.45)
-        }
-        .frame(width: head + size * 0.4, height: head + earH * 0.9)
-        .shadow(
-            color: mode == .active ? color.glow.opacity(0.4) : .clear,
-            radius: size * 0.3
-        )
-        .onAppear { start() }
-        .onDisappear {
-            blinkTask?.cancel()
-            twitchTask?.cancel()
-        }
-        .onChange(of: mode) { _, _ in start() }
-    }
-
-    @ViewBuilder
-    private var eye: some View {
-        if mode == .sleeping || blink {
-            Capsule()
-                .fill(.white)
-                .frame(width: size * 0.34, height: 1.5)
-        } else {
-            Circle()
-                .fill(.white)
-                .frame(width: size * 0.38, height: size * 0.38)
-                .overlay(
-                    Capsule()
-                        .fill(.black)
-                        .frame(
-                            width: size * (mode == .curious ? 0.13 : 0.1),
-                            height: size * 0.26
-                        )
-                )
-        }
-    }
-
-    private func start() {
-        blinkTask?.cancel()
-        twitchTask?.cancel()
-        leftEar = 0
-        rightEar = 0
-        guard mode != .sleeping else { return }
-
-        // Shocked: ears pinned back, no twitches, no blinks.
-        if mode == .shocked {
-            withAnimation(.spring(response: 0.18, dampingFraction: 0.5)) {
-                leftEar = -18
-                rightEar = 18
-            }
-            return
-        }
-
-        // Focused: ears forward, no twitches.
-        if mode == .focused {
-            blinkTask = Task { @MainActor in
-                await runBlinkLoop(mode: mode) { self.blink = $0 }
-            }
-            return
-        }
-
-        // Ear behavior: single twitches, occasional alert-back flip-both.
-        twitchTask = Task { @MainActor in
-            while !Task.isCancelled {
-                let delay: UInt64 = {
-                    switch mode {
-                    case .curious: return UInt64.random(in: 1_400_000_000 ... 3_000_000_000)
-                    case .active:  return UInt64.random(in: 2_500_000_000 ... 5_000_000_000)
-                    default:       return UInt64.random(in: 4_000_000_000 ... 8_000_000_000)
-                    }
-                }()
-                try? await Task.sleep(nanoseconds: delay)
-                if Task.isCancelled { return }
-
-                // In active mode, ~30% chance of both-ears-back alert pose.
-                if mode == .active && Int.random(in: 0..<100) < 30 {
-                    withAnimation(.easeOut(duration: 0.14)) {
-                        leftEar = -10
-                        rightEar = 10
-                    }
-                    try? await Task.sleep(nanoseconds: 380_000_000)
-                    if Task.isCancelled { return }
-                    withAnimation(.easeOut(duration: 0.22)) {
-                        leftEar = 0
-                        rightEar = 0
-                    }
-                } else {
-                    // Single ear twitch
-                    let useLeft = Bool.random()
-                    withAnimation(.easeInOut(duration: 0.13)) {
-                        if useLeft { leftEar = -12 } else { rightEar = 12 }
-                    }
-                    try? await Task.sleep(nanoseconds: 180_000_000)
-                    if Task.isCancelled { return }
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        leftEar = 0
-                        rightEar = 0
-                    }
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            ZStack {
+                ForEach(0..<ringCount, id: \.self) { i in
+                    let phase = ((t * rate) + Double(i) / Double(ringCount))
+                        .truncatingRemainder(dividingBy: 1)
+                    let scale = 0.35 + 1.55 * CGFloat(phase)
+                    Circle()
+                        .stroke(fillColor.opacity(1.0 - phase), lineWidth: 1.4)
+                        .frame(width: size * scale * 1.6, height: size * scale * 1.6)
                 }
-            }
-        }
-
-        blinkTask = Task { @MainActor in
-            await runBlinkLoop(mode: mode) { self.blink = $0 }
-        }
-    }
-}
-
-// MARK: - Bunny (squash-and-stretch hop, nose wiggle, ear perk)
-
-private struct BunnyBuddy: View {
-    let mode: BuddyFace.Mode
-    let size: CGFloat
-    let color: BuddyColor
-
-    @State private var hop: CGFloat = 0
-    @State private var scaleY: CGFloat = 1.0
-    @State private var scaleX: CGFloat = 1.0
-    @State private var earTilt: Double = 0
-    @State private var noseOffset: CGFloat = 0
-    @State private var blink = false
-    @State private var blinkTask: Task<Void, Never>?
-    @State private var hopTask: Task<Void, Never>?
-    @State private var noseTask: Task<Void, Never>?
-
-    // Curious mode tilts ears forward instead of sideways.
-    private var leftEarTilt: Double {
-        mode == .curious ? 22 : -earTilt
-    }
-    private var rightEarTilt: Double {
-        mode == .curious ? -22 : earTilt
-    }
-
-    var body: some View {
-        let headW = size * 1.8
-        let headH = size * 1.55
-        let earW = size * 0.34
-        let earH = size * 1.0
-
-        return ZStack {
-            HStack(spacing: earW * 0.45) {
-                Capsule()
-                    .fill(bodyColor(mode, color))
-                    .frame(width: earW, height: earH)
-                    .overlay(
-                        Capsule()
-                            .fill(Color(red: 1.0, green: 0.78, blue: 0.84))
-                            .frame(width: earW * 0.5, height: earH * 0.75)
-                            .offset(y: earH * 0.05)
+                // Core
+                Circle()
+                    .fill(fillColor)
+                    .frame(width: size * 0.5, height: size * 0.5)
+                    .shadow(
+                        color: color.glow.opacity(mode == .sleeping ? 0 : 0.6),
+                        radius: size * 0.35
                     )
-                    .rotationEffect(.degrees(leftEarTilt), anchor: .bottom)
-                Capsule()
-                    .fill(bodyColor(mode, color))
-                    .frame(width: earW, height: earH)
-                    .overlay(
-                        Capsule()
-                            .fill(Color(red: 1.0, green: 0.78, blue: 0.84))
-                            .frame(width: earW * 0.5, height: earH * 0.75)
-                            .offset(y: earH * 0.05)
-                    )
-                    .rotationEffect(.degrees(rightEarTilt), anchor: .bottom)
             }
-            .offset(y: -headH * 0.7)
-
-            Ellipse()
-                .fill(bodyColor(mode, color))
-                .frame(width: headW, height: headH)
-
-            HStack(spacing: size * 0.55) {
-                eye
-                eye
-            }
-            .offset(y: -size * 0.05)
-
-            // Pink nose
-            Ellipse()
-                .fill(Color(red: 1.0, green: 0.72, blue: 0.82))
-                .frame(width: size * 0.22, height: size * 0.15)
-                .offset(x: noseOffset, y: size * 0.32)
+            .frame(width: size * 2.4, height: size * 2.4)
         }
-        .frame(width: headW + size * 0.4, height: headH + earH * 0.85)
-        .scaleEffect(x: scaleX, y: scaleY, anchor: .bottom)
-        .offset(y: hop)
-        .shadow(
-            color: mode == .active ? color.glow.opacity(0.4) : .clear,
-            radius: size * 0.3
-        )
-        .onAppear { start() }
-        .onDisappear {
-            blinkTask?.cancel()
-            hopTask?.cancel()
-            noseTask?.cancel()
-        }
-        .onChange(of: mode) { _, _ in start() }
     }
+}
 
-    @ViewBuilder
-    private var eye: some View {
-        if mode == .sleeping || blink {
-            Capsule()
-                .fill(.white)
-                .frame(width: size * 0.3, height: 1.5)
-        } else {
-            Circle()
-                .fill(.white)
-                .frame(width: size * 0.32, height: size * 0.32)
+// MARK: - Wave (sine line, frequency + amplitude track mode)
+
+private struct WaveBuddy: View {
+    let mode: BuddyFace.Mode
+    let size: CGFloat
+    let color: BuddyColor
+
+    private var lineColor: Color {
+        switch mode {
+        case .shocked:                       return shockColor
+        case .active, .curious:              return color.base
+        case .focused, .content, .idle:      return color.base.opacity(0.9)
+        case .sleeping:                      return color.base.opacity(0.4)
         }
     }
 
-    private func start() {
-        blinkTask?.cancel()
-        hopTask?.cancel()
-        noseTask?.cancel()
-        hop = 0
-        scaleY = 1.0
-        scaleX = 1.0
-        earTilt = 0
-        noseOffset = 0
-
-        guard mode != .sleeping else { return }
-
-        // Shocked: freeze in place, ears flat, wide eyes.
-        if mode == .shocked {
-            withAnimation(.spring(response: 0.2, dampingFraction: 0.55)) {
-                scaleY = 0.9
-                scaleX = 1.15
-            }
-            return
+    /// Phase advance rate (Hz)
+    private var freq: Double {
+        switch mode {
+        case .shocked:  return 3.5
+        case .curious:  return 2.4
+        case .active:   return 1.8
+        case .focused:  return 0.9
+        case .content:  return 1.1
+        case .idle:     return 0.6
+        case .sleeping: return 0.18
         }
+    }
 
-        // Focused: standing still, no hops.
-        if mode == .focused {
-            blinkTask = Task { @MainActor in
-                await runBlinkLoop(mode: mode) { self.blink = $0 }
-            }
-            return
+    private var amplitude: CGFloat {
+        switch mode {
+        case .shocked:  return 0.85
+        case .curious:  return 0.7
+        case .active:   return 0.6
+        case .focused:  return 0.32
+        case .content:  return 0.3
+        case .idle:     return 0.22
+        case .sleeping: return 0.08
         }
+    }
 
-        // Ear sway (sideways, subtle). Curious mode overrides this via
-        // fixed forward tilt in leftEarTilt/rightEarTilt.
-        if mode != .curious {
-            let tiltAmt: Double = 4.5
-            let tiltDur: Double = 2.8
-            withAnimation(.easeInOut(duration: tiltDur).repeatForever(autoreverses: true)) {
-                earTilt = tiltAmt
-            }
+    private var cycles: Double {
+        switch mode {
+        case .shocked: return 4.0
+        case .curious: return 3.5
+        case .active:  return 3.0
+        case .focused: return 2.2
+        case .content: return 2.4
+        case .idle:    return 1.8
+        case .sleeping:return 1.2
         }
+    }
 
-        // Squash-and-stretch hop loop — keyframed manually via a Task that
-        // chains withAnimation steps. This gives us: (1) crouch, (2) jump
-        // up with stretch, (3) land with squash, (4) pause on ground.
-        hopTask = Task { @MainActor in
-            let hopAmt: CGFloat = {
-                switch mode {
-                case .active:  return 2.8
-                case .curious: return 1.8
-                case .content: return 1.1
-                default:       return 1.6
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            Canvas { ctx, sz in
+                var path = Path()
+                let mid = sz.height / 2
+                let amp = sz.height * 0.45 * amplitude
+                let steps = Int(sz.width)
+                let phase = CGFloat(t * freq * 2.0 * .pi)
+                for i in 0...steps {
+                    let x = CGFloat(i)
+                    let y = mid + sin((x / sz.width) * CGFloat(cycles) * .pi + phase) * amp
+                    if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                    else      { path.addLine(to: CGPoint(x: x, y: y)) }
                 }
-            }()
-            let pauseMs: UInt64 = {
-                switch mode {
-                case .active:  return 120_000_000
-                case .curious: return 60_000_000
-                case .content: return 900_000_000
-                default:       return 450_000_000
-                }
-            }()
-
-            while !Task.isCancelled {
-                // (1) Tiny crouch before jumping — anticipation.
-                withAnimation(.easeOut(duration: 0.1)) {
-                    scaleY = 0.92
-                    scaleX = 1.08
-                }
-                try? await Task.sleep(nanoseconds: 100_000_000)
-                if Task.isCancelled { return }
-
-                // (2) Jump up with stretch.
-                withAnimation(.easeOut(duration: 0.22)) {
-                    hop = -hopAmt
-                    scaleY = 1.14
-                    scaleX = 0.9
-                }
-                try? await Task.sleep(nanoseconds: 220_000_000)
-                if Task.isCancelled { return }
-
-                // (3) Fall back down.
-                withAnimation(.easeIn(duration: 0.18)) {
-                    hop = 0
-                    scaleY = 1.0
-                    scaleX = 1.0
-                }
-                try? await Task.sleep(nanoseconds: 180_000_000)
-                if Task.isCancelled { return }
-
-                // (4) Squash on impact.
-                withAnimation(.easeOut(duration: 0.08)) {
-                    scaleY = 0.88
-                    scaleX = 1.12
-                }
-                try? await Task.sleep(nanoseconds: 80_000_000)
-                if Task.isCancelled { return }
-
-                // (5) Recover to neutral.
-                withAnimation(.easeOut(duration: 0.15)) {
-                    scaleY = 1.0
-                    scaleX = 1.0
-                }
-                try? await Task.sleep(nanoseconds: 150_000_000)
-                if Task.isCancelled { return }
-
-                // (6) Pause before next hop.
-                try? await Task.sleep(nanoseconds: pauseMs)
+                ctx.stroke(path, with: .color(lineColor), lineWidth: max(1.5, size * 0.18))
             }
+            .frame(width: size * 2.8, height: size * 1.5)
         }
+    }
+}
 
-        // Nose wiggle: always present, but more noticeable in content mode.
-        if mode == .content || mode == .curious {
-            noseTask = Task { @MainActor in
-                while !Task.isCancelled {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        noseOffset = 0.5
-                    }
-                    try? await Task.sleep(nanoseconds: 180_000_000)
-                    if Task.isCancelled { return }
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        noseOffset = -0.5
-                    }
-                    try? await Task.sleep(nanoseconds: 180_000_000)
-                    if Task.isCancelled { return }
+// MARK: - Spark (orbiting particles + radiant core)
+
+private struct SparkBuddy: View {
+    let mode: BuddyFace.Mode
+    let size: CGFloat
+    let color: BuddyColor
+
+    private var fillColor: Color {
+        switch mode {
+        case .shocked:                       return shockColor
+        case .active, .curious:              return color.base
+        case .focused, .content, .idle:      return color.base.opacity(0.9)
+        case .sleeping:                      return color.base.opacity(0.4)
+        }
+    }
+
+    private var particleCount: Int {
+        switch mode {
+        case .shocked: return 16
+        case .curious: return 12
+        case .active:  return 10
+        case .focused: return 6
+        case .content: return 8
+        case .idle:    return 5
+        case .sleeping: return 0
+        }
+    }
+
+    private var speed: Double {
+        switch mode {
+        case .shocked: return 1.6
+        case .curious: return 1.3
+        case .active:  return 1.0
+        case .focused: return 0.6
+        case .content: return 0.7
+        case .idle:    return 0.4
+        case .sleeping: return 0.1
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            Canvas { ctx, sz in
+                let center = CGPoint(x: sz.width / 2, y: sz.height / 2)
+                let maxR = sz.width * 0.48
+                for i in 0..<particleCount {
+                    let lifeT = (t * speed + Double(i) * 0.18)
+                        .truncatingRemainder(dividingBy: 1.6) / 1.6
+                    let cycle = CGFloat(lifeT)
+                    let angle = (Double(i) / Double(max(particleCount, 1))) * 2 * .pi
+                        + t * 0.4
+                    let r = maxR * cycle
+                    let x = center.x + CGFloat(cos(angle)) * r
+                    let y = center.y + CGFloat(sin(angle)) * r
+                    let alpha = 1.0 - lifeT
+                    let dot = CGRect(x: x - 1.6, y: y - 1.6, width: 3.2, height: 3.2)
+                    ctx.fill(Path(ellipseIn: dot), with: .color(fillColor.opacity(alpha)))
                 }
+                // Core
+                let core = CGRect(
+                    x: center.x - size * 0.22,
+                    y: center.y - size * 0.22,
+                    width: size * 0.44,
+                    height: size * 0.44
+                )
+                ctx.fill(Path(ellipseIn: core), with: .color(fillColor))
             }
-        }
-
-        blinkTask = Task { @MainActor in
-            await runBlinkLoop(mode: mode) { self.blink = $0 }
+            .frame(width: size * 2.4, height: size * 2.4)
         }
     }
 }
