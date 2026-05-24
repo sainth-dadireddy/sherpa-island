@@ -134,6 +134,7 @@ final class NotchWindow: NSPanel {
         self.ignoresMouseEvents = false
         self.acceptsMouseMovedEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
 
         let view = NotchContentView(
@@ -207,14 +208,12 @@ final class NotchWindow: NSPanel {
     }
 
     // Never become the key window. `.nonactivatingPanel` already stops
-    // the panel from activating our app on click — but without this,
-    // the panel still becomes the *key* window, which steals keyboard
-    // focus from whatever was previously key (your editor, terminal,
-    // etc). The side effect is that keyboard shortcuts bound to panel
-    // buttons (Enter / Esc on Allow / Deny) and typing in the filter
-    // bar stop working. Button clicks still work because they fire
-    // on mouse events regardless of key state.
-    override var canBecomeKey: Bool { false }
+    // the panel from activating our app on click. We allow canBecomeKey
+    // = true and set `becomesKeyOnlyIfNeeded = true` (in init) so the
+    // panel only takes keyboard focus when the user clicks something
+    // that actually needs it (text field, etc). Clicking inert pill
+    // area or buttons does NOT steal focus from the underlying editor.
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
     // MARK: - Frame helpers
@@ -763,6 +762,7 @@ final class SnapPreviewWindow: NSPanel {
         self.level = .screenSaver
         self.ignoresMouseEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
+        self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
         host.autoresizingMask = [.width, .height]
         self.contentView = host
