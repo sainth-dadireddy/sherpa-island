@@ -53,20 +53,23 @@ final class VoiceAnnouncer {
 
     /// Voice resolution chain:
     ///   1. The explicit identifier the user picked (if set + installed)
-    ///   2. A "Siri" voice (whatever variant the system shipped)
-    ///   3. Premium Ava (legacy default)
-    ///   4. Any en-US voice
+    ///   2. Premium Zoe (warmest of the downloadable Apple voices)
+    ///   3. Any premium-quality English voice the system has
+    ///   4. Premium Ava (legacy default)
+    ///   5. Any en-US voice
     static func resolveVoice(identifier: String) -> AVSpeechSynthesisVoice? {
         if !identifier.isEmpty,
            let exact = AVSpeechSynthesisVoice(identifier: identifier) {
             return exact
         }
+        if let zoe = AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Zoe") {
+            return zoe
+        }
         let voices = AVSpeechSynthesisVoice.speechVoices()
-        if let siri = voices.first(where: {
-            $0.identifier.localizedCaseInsensitiveContains("siri")
-                || $0.name.localizedCaseInsensitiveContains("siri")
+        if let premium = voices.first(where: {
+            $0.quality == .premium && $0.language.hasPrefix("en")
         }) {
-            return siri
+            return premium
         }
         return AVSpeechSynthesisVoice(identifier: "com.apple.voice.premium.en-US.Ava")
             ?? AVSpeechSynthesisVoice(language: "en-US")
