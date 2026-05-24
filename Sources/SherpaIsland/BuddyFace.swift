@@ -175,8 +175,8 @@ private struct EyesBuddy: View {
         case .active, .curious: return color.base
         case .focused:          return color.base.opacity(0.95)
         case .content:          return color.base.opacity(0.85)
-        case .idle:             return .white.opacity(0.92)
-        case .sleeping:         return .white.opacity(0.35)
+        case .idle:             return color.base.opacity(0.8)
+        case .sleeping:         return color.base.opacity(0.3)
         }
     }
 
@@ -187,7 +187,7 @@ private struct EyesBuddy: View {
         case .curious:  return color.glow.opacity(0.7)
         case .focused:  return color.glow.opacity(0.3)
         case .content:  return color.glow.opacity(0.35)
-        case .idle:     return .white.opacity(0.25)
+        case .idle:     return color.glow.opacity(0.4)
         case .sleeping: return .clear
         }
     }
@@ -346,8 +346,8 @@ private struct OrbBuddy: View {
         case .active, .curious: return color.base
         case .focused:          return color.base.opacity(0.88)
         case .content:          return color.base.opacity(0.78)
-        case .idle:             return .white.opacity(0.88)
-        case .sleeping:         return .white.opacity(0.25)
+        case .idle:             return color.base.opacity(0.8)
+        case .sleeping:         return color.base.opacity(0.25)
         }
     }
 
@@ -492,8 +492,8 @@ private struct BarsBuddy: View {
         case .active, .curious: return color.base
         case .focused:          return color.base.opacity(0.9)
         case .content:          return color.base.opacity(0.80)
-        case .idle:             return .white.opacity(0.88)
-        case .sleeping:         return .white.opacity(0.3)
+        case .idle:             return color.base.opacity(0.8)
+        case .sleeping:         return color.base.opacity(0.3)
         }
     }
 
