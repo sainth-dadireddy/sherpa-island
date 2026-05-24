@@ -3972,6 +3972,12 @@ struct NotchContentView: View {
                             .foregroundColor(accent.opacity(0.85))
                             .help("Pinned to top — right-click row to unpin")
                     }
+                    if let collisionInfo = cwdCollision(for: s) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(Color(red: 1.00, green: 0.78, blue: 0.35))
+                            .help(collisionInfo)
+                    }
                     if let g = toolActionGlyph(s.toolAction) {
                         Image(systemName: g.symbol)
                             .font(.system(size: 10, weight: .medium))
@@ -4133,6 +4139,27 @@ struct NotchContentView: View {
     }
 
     /// Shortens model strings like "claude-opus-4-6" → "opus 4.6".
+    /// If two or more live sessions share this session's cwd, return a
+    /// tooltip string listing the colliding session IDs + branches.
+    /// Nil otherwise. Surfaces in the row as a small ⚠️ icon so the
+    /// user notices before two terminals start fighting over the same
+    /// files.
+    private func cwdCollision(for s: ClaudeSession) -> String? {
+        let peers = monitor.sessions.filter { $0.cwd == s.cwd && $0.id != s.id }
+        guard !peers.isEmpty else { return nil }
+        let lines = peers.map { p -> String in
+            let sid = String(p.id.prefix(8))
+            let pid = p.claudePID.map { " · pid \($0)" } ?? ""
+            return "• \(sid)\(pid)"
+        }
+        return """
+        \(peers.count + 1) Claude sessions share this cwd. \
+        Edits in different sessions can clobber each other.
+        Colliding sessions:
+        \(lines.joined(separator: "\n"))
+        """
+    }
+
     /// SF Symbol + tint for the current tool action a session is
     /// performing. Lets the user see at a glance whether a session is
     /// reading, editing, shelling, planning, etc. without expanding
