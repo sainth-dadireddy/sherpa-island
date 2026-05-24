@@ -24,6 +24,8 @@ struct NotchContentView: View {
     @StateObject private var power = PowerMonitor()
     @State private var lastThermalSpoken: String = ""
     @State private var lastLPMSpoken: Bool = false
+    @State private var manualFanMode: String? = nil  // "max" | "auto" | nil
+    @State private var manualFanToast: String? = nil
     @EnvironmentObject var prefs: BuddyPreferences
     let notchWidth: CGFloat
     let notchHeight: CGFloat
@@ -1786,8 +1788,18 @@ struct NotchContentView: View {
                 HStack(spacing: 6) {
                     sectionLabel("Thermal", count: tempPairs.count)
                     Spacer()
+                    if let toast = manualFanToast {
+                        Text(toast)
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundColor(.white.opacity(0.85))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(accent.opacity(0.25)))
+                            .transition(.opacity.combined(with: .move(edge: .trailing)))
+                    }
                     thermalManualButtons
                 }
+                .animation(.easeInOut(duration: 0.18), value: manualFanToast)
                 if let hottest = tempPairs.first {
                     thermalHeroGauge(label: hottest.key, value: hottest.value)
                 }
@@ -1899,38 +1911,56 @@ struct NotchContentView: View {
         let path = Self.thermalForgePath()
         if let path {
             HStack(spacing: 6) {
-                Button {
-                    runShell("sudo \(path) max", label: "manual-max")
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "wind")
-                        Text("Blow")
-                    }
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(Color(red: 1.0, green: 0.55, blue: 0.55))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.red.opacity(0.14)))
-                    .overlay(Capsule().stroke(Color.red.opacity(0.4), lineWidth: 0.5))
-                }
-                .buttonStyle(.plain)
-                .help("Set both fans to max (\(path) max)")
-                Button {
-                    runShell("sudo \(path) auto", label: "manual-auto")
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "arrow.uturn.backward")
-                        Text("Auto")
-                    }
-                    .font(.system(size: 10, weight: .semibold, design: .rounded))
-                    .foregroundColor(.white.opacity(0.75))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(Capsule().fill(Color.white.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
-                .help("Reset fans to Apple defaults (\(path) auto)")
+                manualButton(
+                    label: "Blow", icon: "wind", mode: "max", path: path,
+                    tint: Color(red: 1.0, green: 0.55, blue: 0.55)
+                )
+                manualButton(
+                    label: "Auto", icon: "arrow.uturn.backward", mode: "auto", path: path,
+                    tint: .white.opacity(0.75)
+                )
             }
+        }
+    }
+
+    private func manualButton(label: String, icon: String, mode: String, path: String, tint: Color) -> some View {
+        let selected = manualFanMode == mode
+        let bg = selected
+            ? tint.opacity(0.32)
+            : (mode == "max" ? Color.red.opacity(0.14) : Color.white.opacity(0.08))
+        let border = selected ? tint.opacity(0.85) : (mode == "max" ? Color.red.opacity(0.4) : Color.clear)
+        return Button {
+            triggerManualFanMode(mode: mode, path: path)
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: icon)
+                Text(label)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                }
+            }
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundColor(selected ? .white : tint)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(bg))
+            .overlay(Capsule().stroke(border, lineWidth: selected ? 1 : 0.5))
+            .animation(.easeOut(duration: 0.18), value: selected)
+        }
+        .buttonStyle(.plain)
+        .help("\(path) \(mode)")
+    }
+
+    private func triggerManualFanMode(mode: String, path: String) {
+        manualFanMode = mode
+        let label = mode == "max" ? "Blowing fans at max" : "Resetting fans to auto"
+        manualFanToast = label
+        VoiceAnnouncer.shared.preview(label + ".", prefs: prefs)
+        runShell("sudo \(path) \(mode) 2>&1", label: "manual-\(mode)")
+        // Clear toast after 2.5s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            if manualFanToast == label { manualFanToast = nil }
         }
     }
 
@@ -2013,17 +2043,45 @@ struct NotchContentView: View {
     }
 
     /// Generic shell-out helper used by the thermal automation rules.
-    /// Empty strings no-op so each command is optional.
+    /// Empty strings no-op so each command is optional. Captures stdout
+    /// + stderr to /tmp/sherpa-shell.log so the user can debug why
+    /// `sudo thermalforge max` etc didn't take effect.
     private func runShell(_ cmd: String, label: String) {
         let trimmed = cmd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        let outPipe = Pipe()
+        let errPipe = Pipe()
         let task = Process()
         task.launchPath = "/bin/zsh"
         task.arguments = ["-lc", trimmed]
-        task.standardOutput = Pipe()
-        task.standardError = Pipe()
+        task.standardOutput = outPipe
+        task.standardError = errPipe
         do { try task.run() } catch {
-            NSLog("[SherpaIsland] action[%@] failed: %@", label, "\(error)")
+            Self.appendShellLog("[\(label)] launch error: \(error)")
+            return
+        }
+        // Drain output on a background queue.
+        DispatchQueue.global(qos: .utility).async {
+            task.waitUntilExit()
+            let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(),
+                             encoding: .utf8) ?? ""
+            let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(),
+                             encoding: .utf8) ?? ""
+            Self.appendShellLog("[\(label)] exit=\(task.terminationStatus) cmd=\(trimmed) out=\(out.trimmingCharacters(in: .whitespacesAndNewlines)) err=\(err.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+    }
+
+    private static func appendShellLog(_ msg: String) {
+        let line = "[\(Date())] \(msg)\n"
+        let url = URL(fileURLWithPath: "/tmp/sherpa-shell.log")
+        if let data = line.data(using: .utf8) {
+            if let h = try? FileHandle(forWritingTo: url) {
+                h.seekToEndOfFile()
+                h.write(data)
+                try? h.close()
+            } else {
+                try? data.write(to: url)
+            }
         }
     }
 

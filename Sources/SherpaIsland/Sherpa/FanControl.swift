@@ -41,7 +41,7 @@ final class FanController: ObservableObject {
     }
 
     private func startPolling() {
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.readFans()
             }
@@ -49,10 +49,42 @@ final class FanController: ObservableObject {
     }
 
     private func readFans() {
-        // v0.1: stub values. v0.2 will read via IOKit SMC F0Ac/F1Ac keys.
-        // For now derive a pseudo-value to show widget is alive.
-        leftFanRPM = 2140
-        rightFanRPM = 2090
+        if let real = Self.readViaThermalForge() {
+            leftFanRPM = real.left
+            rightFanRPM = real.right
+        } else {
+            leftFanRPM = 0
+            rightFanRPM = 0
+        }
+    }
+
+    private struct FanReading { let left: Int; let right: Int }
+
+    private static func readViaThermalForge() -> FanReading? {
+        let candidates = ["/usr/local/bin/thermalforge", "/opt/homebrew/bin/thermalforge"]
+        guard let path = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            return nil
+        }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = ["status"]
+        let outPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = Pipe()
+        do { try proc.run() } catch { return nil }
+        let deadline = Date().addingTimeInterval(1.5)
+        while proc.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if proc.isRunning { proc.terminate(); return nil }
+        guard proc.terminationStatus == 0 else { return nil }
+        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let fans = obj["fans"] as? [[String: Any]]
+        else { return nil }
+        let left = fans.first { ($0["index"] as? Int) == 0 }?["actual_rpm"] as? Int ?? 0
+        let right = fans.first { ($0["index"] as? Int) == 1 }?["actual_rpm"] as? Int ?? 0
+        return FanReading(left: left, right: right)
     }
 
     func setMode(_ newMode: FanMode) {
