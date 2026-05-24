@@ -48,6 +48,11 @@ struct NotchContentView: View {
     @State private var displayedVisible = false
     @State private var fadeOutToken = UUID()
     @State private var filterQuery: String = ""
+
+    /// Persisted list of pinned cwds. Pinned sessions sort to the top
+    /// of the list and show a filled star. Bookmarking by cwd (instead
+    /// of session ID) survives session restarts.
+    @AppStorage("sherpa.pinnedCwds") private var pinnedCwdsRaw: String = ""
     @State private var showingAppearancePicker = false
     /// The most recent session we've seen actively working. Captured
     /// on every monitor tick while an active session exists, so when
@@ -1343,13 +1348,41 @@ struct NotchContentView: View {
 
     private var filteredSessions: [ClaudeSession] {
         let q = filterQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return monitor.sessions }
-        return monitor.sessions.filter { session in
-            session.projectName.lowercased().contains(q)
-            || session.cwd.lowercased().contains(q)
-            || session.shortStatus.lowercased().contains(q)
-            || session.model.lowercased().contains(q)
+        let base: [ClaudeSession] = {
+            guard !q.isEmpty else { return monitor.sessions }
+            return monitor.sessions.filter { session in
+                session.projectName.lowercased().contains(q)
+                || session.cwd.lowercased().contains(q)
+                || session.shortStatus.lowercased().contains(q)
+                || session.model.lowercased().contains(q)
+            }
+        }()
+        // Pinned cwds float to the top, preserving the monitor's
+        // last-activity order within each group.
+        let pins = pinnedCwds
+        return base.sorted { a, b in
+            let ap = pins.contains(a.cwd)
+            let bp = pins.contains(b.cwd)
+            if ap == bp { return false }
+            return ap
         }
+    }
+
+    /// Decoded set of pinned cwds. Stored as a newline-separated string
+    /// for AppStorage compatibility.
+    private var pinnedCwds: Set<String> {
+        Set(pinnedCwdsRaw.split(separator: "\n").map(String.init))
+    }
+
+    private func isPinned(_ cwd: String) -> Bool {
+        pinnedCwds.contains(cwd)
+    }
+
+    private func togglePin(_ cwd: String) {
+        guard !cwd.isEmpty else { return }
+        var set = pinnedCwds
+        if set.remove(cwd) == nil { set.insert(cwd) }
+        pinnedCwdsRaw = set.sorted().joined(separator: "\n")
     }
 
     @ViewBuilder
@@ -3532,6 +3565,11 @@ struct NotchContentView: View {
         }
         .buttonStyle(.plain)
         .help("Click to see what this session is up to")
+        .contextMenu {
+            Button(isPinned(s.cwd) ? "Unpin from top" : "Pin to top") {
+                togglePin(s.cwd)
+            }
+        }
     }
 
     private func sessionRowContent(_ s: ClaudeSession) -> some View {
@@ -3548,6 +3586,12 @@ struct NotchContentView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    if isPinned(s.cwd) {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(accent.opacity(0.85))
+                            .help("Pinned to top — right-click row to unpin")
+                    }
                     Text(s.projectName)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white)
