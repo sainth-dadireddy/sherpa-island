@@ -2642,6 +2642,32 @@ struct NotchContentView: View {
         return String(format: "$%.1f", usd)
     }
 
+    /// 12-bar sparkline of last hour's jsonl write activity. Renders
+    /// nothing if no activity (avoids a row of empty pips). Tooltip on
+    /// hover shows the bucket counts.
+    private func activitySparkline(for s: ClaudeSession) -> some View {
+        let path = "\(s.projectPath)/\(s.id).jsonl"
+        let buckets = ActivityBuckets.compute(jsonlPath: path)
+        let maxV = buckets.max() ?? 0
+        let summary = buckets.map(String.init).joined(separator: " ")
+        return Group {
+            if maxV > 0 {
+                HStack(spacing: 1) {
+                    ForEach(Array(buckets.enumerated()), id: \.offset) { _, count in
+                        Capsule()
+                            .fill(Color.white.opacity(count == 0 ? 0.10 : 0.55))
+                            .frame(
+                                width: 2,
+                                height: max(2, CGFloat(count) / CGFloat(maxV) * 12)
+                            )
+                    }
+                }
+                .frame(height: 12)
+                .help("Last 60 min activity (5-min buckets): \(summary)")
+            }
+        }
+    }
+
     /// Inline mini progress bar showing context-window fill for a
     /// session. Lets the user spot when a session is approaching its
     /// effective context cap and needs /compact. Green < 50%, yellow
@@ -3785,6 +3811,8 @@ struct NotchContentView: View {
                         .truncationMode(.tail)
                         .help(s.lastMessage)
                 }
+
+                activitySparkline(for: s)
             }
 
             modeBadge(hookBridge.liveModes[s.cwd] ?? s.nativeMode)
