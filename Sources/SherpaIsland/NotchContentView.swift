@@ -1004,10 +1004,44 @@ struct NotchContentView: View {
         }
         .overlay(alignment: .top) {
             // Drop-target hint border + transient toast confirmation.
-            ZStack(alignment: .top) {
+            ZStack(alignment: .center) {
+                // Pulse-glow border — accent-tinted stroke with a soft
+                // outer shadow that breathes while a drag is hovering.
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(accent.opacity(isFileDropTargeted ? 0.85 : 0), lineWidth: 2)
+                    .strokeBorder(
+                        accent.opacity(isFileDropTargeted ? 0.85 : 0),
+                        lineWidth: isFileDropTargeted ? 2.5 : 2
+                    )
+                    .shadow(
+                        color: accent.opacity(isFileDropTargeted ? (dropPulseOn ? 0.55 : 0.22) : 0),
+                        radius: isFileDropTargeted ? (dropPulseOn ? 14 : 6) : 0
+                    )
                     .allowsHitTesting(false)
+
+                // Centered "Drop to copy path" label that fades in
+                // while the drag is over the panel. Sits above the
+                // panel content so it's readable on any background.
+                if isFileDropTargeted {
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.down.doc.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Drop to copy path")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .background(
+                        Capsule()
+                            .fill(Color.black.opacity(0.78))
+                            .overlay(Capsule().stroke(accent.opacity(0.75), lineWidth: 1))
+                    )
+                    .shadow(color: .black.opacity(0.55), radius: 12, y: 4)
+                    .scaleEffect(dropPulseOn ? 1.04 : 1.0)
+                    .transition(.scale(scale: 0.85).combined(with: .opacity))
+                    .allowsHitTesting(false)
+                }
+
                 if let msg = fileDropToast {
                     Text(msg)
                         .font(.system(size: 11, weight: .medium, design: .rounded))
@@ -1022,6 +1056,13 @@ struct NotchContentView: View {
             }
             .animation(.easeInOut(duration: 0.18), value: isFileDropTargeted)
             .animation(.easeInOut(duration: 0.18), value: fileDropToast)
+            .animation(
+                .easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                value: dropPulseOn
+            )
+            .onChange(of: isFileDropTargeted) { _, hovering in
+                dropPulseOn = hovering
+            }
         }
         .background(shape.fill(Color.black))
         .overlay(alignment: .top) {
@@ -3049,6 +3090,9 @@ struct NotchContentView: View {
     /// Drag-drop UI state for the file-path drop receiver.
     @State private var isFileDropTargeted = false
     @State private var fileDropToast: String? = nil
+    /// Toggles every 0.9s while a drag is hovering — drives the
+    /// breathing glow and label scale on the drop-target overlay.
+    @State private var dropPulseOn = false
 
     /// Snapshot of session ids from the previous monitor tick, used
     /// to detect when a session disappears (process exit / jsonl
