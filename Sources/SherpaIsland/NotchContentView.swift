@@ -2386,6 +2386,17 @@ struct NotchContentView: View {
                             .font(.system(size: 8, weight: .bold, design: .rounded))
                             .tracking(0.6)
                             .foregroundColor(.white.opacity(0.4))
+                        HStack {
+                            Text("Equiv. retail")
+                                .font(.system(size: 11, design: .rounded))
+                                .foregroundColor(.white.opacity(0.85))
+                            Spacer()
+                            Text(estimatedRetailCost(usage.today))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.white)
+                                .monospacedDigit()
+                        }
+                        .help("Approximate API list price (Opus rates). Max subscription is $0 — this is the equivalent if billed pay-per-token.")
                         tokenRow(label: "Input", value: usage.today.inputTokens)
                         tokenRow(label: "Output", value: usage.today.outputTokens)
                         tokenRow(label: "Cache read", value: usage.today.cacheReadTokens, dim: true)
@@ -2581,6 +2592,21 @@ struct NotchContentView: View {
         }
         if h > 0 { return "\(h)h \(m)m" }
         return "\(m)m"
+    }
+
+    /// Equivalent API list-price cost for today's tokens, formatted as
+    /// "$X.YZ". Computed at Opus 4.x retail rates ($5/M in, $25/M out,
+    /// $0.50/M cache read, $6.25/M cache write) — purely informational
+    /// since Max-subscription users pay $0.
+    private func estimatedRetailCost(_ w: UsageAggregator.Window) -> String {
+        let usd =
+            Double(w.inputTokens)         / 1_000_000.0 * 5.00 +
+            Double(w.outputTokens)        / 1_000_000.0 * 25.00 +
+            Double(w.cacheReadTokens)     / 1_000_000.0 * 0.50 +
+            Double(w.cacheCreationTokens) / 1_000_000.0 * 6.25
+        if usd < 0.01 { return "<$0.01" }
+        if usd < 10   { return String(format: "$%.2f", usd) }
+        return String(format: "$%.1f", usd)
     }
 
     private func tokenRow(label: String, value: Int, dim: Bool = false) -> some View {
