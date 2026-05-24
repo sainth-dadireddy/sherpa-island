@@ -1516,8 +1516,17 @@ struct NotchContentView: View {
                 VStack(spacing: 5) {
                     ForEach(filteredSessions.prefix(8)) { session in
                         sessionRow(session)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.92, anchor: .top)
+                                    .combined(with: .opacity),
+                                removal: .opacity.combined(with: .move(edge: .leading))
+                            ))
                     }
                 }
+                .animation(
+                    .spring(response: 0.45, dampingFraction: 0.82),
+                    value: filteredSessions.prefix(8).map(\.id)
+                )
             }
         }
     }
@@ -3440,6 +3449,8 @@ struct NotchContentView: View {
                     Capsule()
                         .fill(color.opacity(0.7))
                         .frame(width: geo.size.width * fraction)
+                        .animation(.spring(response: 0.55, dampingFraction: 0.78),
+                                   value: fraction)
                 }
             }
             .frame(height: 3)
@@ -3448,6 +3459,8 @@ struct NotchContentView: View {
                 .font(.system(size: 9, weight: .medium, design: .rounded))
                 .foregroundColor(color.opacity(0.85))
                 .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.55, dampingFraction: 0.78), value: pct)
                 .help("Context window: \(formatTokens(used)) / \(formatTokens(window))")
         }
     }
@@ -4585,6 +4598,9 @@ struct NotchContentView: View {
                         Image(systemName: g.symbol)
                             .font(.system(size: 10, weight: .medium))
                             .foregroundColor(g.color)
+                            .symbolEffect(.bounce, value: s.toolAction)
+                            .transition(.scale.combined(with: .opacity))
+                            .id(g.symbol)
                             .help("Current tool: \(String(describing: s.toolAction))")
                     }
                     Text(s.projectName)
