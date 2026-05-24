@@ -119,24 +119,36 @@ enum VoiceEvent: String, CaseIterable, Identifiable {
     case danger
     case started
     case finished
+    case contextHigh
+    case idleAlert
+    case collision
+    case modeChange
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .permission: return "Permission needed"
-        case .danger:     return "Dangerous command"
-        case .started:    return "Session started"
-        case .finished:   return "Session finished"
+        case .permission:   return "Permission needed"
+        case .danger:       return "Dangerous command"
+        case .started:      return "Session started"
+        case .finished:     return "Session finished"
+        case .contextHigh:  return "Context near cap"
+        case .idleAlert:    return "Pinned session idle"
+        case .collision:    return "Multiple sessions share cwd"
+        case .modeChange:   return "Permission mode changed"
         }
     }
 
     var icon: String {
         switch self {
-        case .permission: return "hand.raised.fill"
-        case .danger:     return "exclamationmark.triangle.fill"
-        case .started:    return "play.circle.fill"
-        case .finished:   return "checkmark.circle.fill"
+        case .permission:   return "hand.raised.fill"
+        case .danger:       return "exclamationmark.triangle.fill"
+        case .started:      return "play.circle.fill"
+        case .finished:     return "checkmark.circle.fill"
+        case .contextHigh:  return "gauge.with.dots.needle.67percent"
+        case .idleAlert:    return "moon.zzz.fill"
+        case .collision:    return "exclamationmark.2"
+        case .modeChange:   return "slider.horizontal.3"
         }
     }
 }

@@ -544,6 +544,9 @@ struct NotchContentView: View {
             // don't spam every refresh tick.
             IdleNotifier.shared.evaluate(sessions: newSessions, pinnedCwds: pinnedCwds)
 
+            // Voice triggers — context-high + cwd-collision transitions.
+            announceVoiceTransitions(old: Array(previousSessionSnapshot.values), new: newSessions)
+
             // Archive sessions that disappeared between this tick and
             // the previous one — they exited or stopped writing.
             let newIDs = Set(newSessions.map(\.id))
@@ -3959,6 +3962,64 @@ struct NotchContentView: View {
     }
 
     // MARK: - Session row
+
+    /// Announce voice events for state transitions between two session
+    /// snapshots. Fires once per crossing (not on every steady-state
+    /// tick) so the speaker isn't constantly chiming.
+    private func announceVoiceTransitions(old: [ClaudeSession], new: [ClaudeSession]) {
+        let oldById = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
+        let newById = Dictionary(uniqueKeysWithValues: new.map { ($0.id, $0) })
+
+        // Context fill 65% threshold — fire when a session crosses up.
+        for s in new {
+            guard s.contextWindow > 0 else { continue }
+            let newFrac = Double(s.contextTokens) / Double(s.contextWindow)
+            let oldFrac: Double = {
+                guard let p = oldById[s.id], p.contextWindow > 0 else { return 0 }
+                return Double(p.contextTokens) / Double(p.contextWindow)
+            }()
+            if oldFrac < 0.65 && newFrac >= 0.65 {
+                VoiceAnnouncer.shared.speak(
+                    "\(s.projectName) context past sixty-five percent. Consider compact.",
+                    event: .contextHigh,
+                    prefs: prefs
+                )
+            }
+        }
+
+        // Cwd collision — fire when a session newly joins an existing cwd.
+        let oldCwdCounts = Dictionary(grouping: old, by: \.cwd).mapValues(\.count)
+        let newCwdCounts = Dictionary(grouping: new, by: \.cwd).mapValues(\.count)
+        for (cwd, count) in newCwdCounts where count > 1 {
+            let was = oldCwdCounts[cwd] ?? 0
+            if was <= 1, !cwd.isEmpty {
+                let name = (cwd as NSString).lastPathComponent
+                VoiceAnnouncer.shared.speak(
+                    "Two Claude sessions are now in \(name). Watch for conflicts.",
+                    event: .collision,
+                    prefs: prefs
+                )
+            }
+        }
+
+        // Session started — id present in new but not old.
+        for s in new where oldById[s.id] == nil {
+            VoiceAnnouncer.shared.speak(
+                "\(s.projectName) session started.",
+                event: .started,
+                prefs: prefs
+            )
+        }
+
+        // Session finished — id present in old but not new.
+        for (_, s) in oldById where newById[s.id] == nil {
+            VoiceAnnouncer.shared.speak(
+                "\(s.projectName) finished.",
+                event: .finished,
+                prefs: prefs
+            )
+        }
+    }
 
     /// Dim long-idle rows so the eye lands on active sessions first.
     /// Pinned sessions stay full opacity regardless of idleness.
