@@ -2310,8 +2310,22 @@ struct NotchContentView: View {
                 VStack(spacing: 4) {
                     ForEach(hookBridge.recentEvents) { ev in
                         recentHookRow(ev)
+                            // New events slide in from the top with a
+                            // small fade, old ones drop out to the
+                            // leading edge — gives the list a sense of
+                            // motion instead of cells popping in place.
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top)
+                                    .combined(with: .opacity),
+                                removal: .move(edge: .leading)
+                                    .combined(with: .opacity)
+                            ))
                     }
                 }
+                .animation(
+                    .spring(response: 0.42, dampingFraction: 0.82),
+                    value: hookBridge.recentEvents.map(\.id)
+                )
             }
         }
     }
