@@ -71,7 +71,7 @@ struct NotchContentView: View {
     // MARK: - Sherpa Island v0.2 integration
     /// Switch between original Notch-Pilot UI and Sherpa Island NotchOrganizer.
     /// Toggle in code or via future Settings panel.
-    @State private var useSherpaOrganizer: Bool = false
+    @AppStorage("sherpa.useSherpaOrganizer") private var useSherpaOrganizer: Bool = false
     @StateObject private var autoModeSwitcher = AutoModeSwitcher()
 
     private let fadeOutDuration: TimeInterval = 10
