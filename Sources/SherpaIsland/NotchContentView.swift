@@ -1712,40 +1712,61 @@ struct NotchContentView: View {
             ? Calendar.current.component(.hour, from: Date())
             : -1
 
-        return HStack(spacing: 2) {
-            ForEach(0..<24, id: \.self) { hour in
-                let count = heatmap.hourlyCounts[hour]
-                let intensity = Double(count) / Double(maxCount)
-                let isHovered = hoveredHeatmapHour == hour
-                let isCurrentHour = hour == currentHour
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(
-                        cellColor(intensity: intensity, isCurrent: isCurrentHour)
-                    )
-                    .frame(height: 22)
-                    .overlay(
-                        // Outline: hovered cell gets a bright border;
-                        // current hour gets a subtle accent border.
-                        RoundedRectangle(cornerRadius: 3)
-                            .strokeBorder(
-                                isHovered
-                                    ? Color.white.opacity(0.85)
-                                    : (isCurrentHour ? accent : .clear),
-                                lineWidth: isHovered ? 1.2 : 1
-                            )
-                    )
-                    .scaleEffect(isHovered ? 1.08 : 1.0)
-                    .animation(.easeOut(duration: 0.12), value: isHovered)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        if hovering {
-                            hoveredHeatmapHour = hour
-                        } else if hoveredHeatmapHour == hour {
-                            hoveredHeatmapHour = nil
-                        }
+        return GeometryReader { geo in
+            HStack(spacing: 2) {
+                ForEach(0..<24, id: \.self) { hour in
+                    let count = heatmap.hourlyCounts[hour]
+                    let intensity = Double(count) / Double(maxCount)
+                    let isHovered = hoveredHeatmapHour == hour
+                    let isCurrentHour = hour == currentHour
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(
+                            cellGradient(intensity: intensity, isCurrent: isCurrentHour)
+                        )
+                        .overlay(
+                            // Outline: hovered cell gets a bright border;
+                            // current hour gets a subtle accent border.
+                            RoundedRectangle(cornerRadius: 3)
+                                .strokeBorder(
+                                    isHovered
+                                        ? Color.white.opacity(0.85)
+                                        : (isCurrentHour ? accent : .clear),
+                                    lineWidth: isHovered ? 1.2 : 1
+                                )
+                        )
+                        // Bars grow up from the baseline on hover so the
+                        // scrub feels like dragging across a 3D ridge.
+                        .scaleEffect(
+                            x: isHovered ? 1.05 : 1.0,
+                            y: isHovered ? 1.18 : 1.0,
+                            anchor: .bottom
+                        )
+                        .animation(.spring(response: 0.32, dampingFraction: 0.55),
+                                   value: isHovered)
+                }
+            }
+            .frame(height: 22)
+            .contentShape(Rectangle())
+            // Single drag gesture maps x → hour, so a click sets the
+            // hovered hour and dragging across the strip scrubs through
+            // the day. minimumDistance: 0 means the gesture also fires
+            // on a plain mouseDown.
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { val in
+                        let w = max(geo.size.width, 1)
+                        let pct = max(0, min(0.9999, val.location.x / w))
+                        let h = Int(pct * 24)
+                        if hoveredHeatmapHour != h { hoveredHeatmapHour = h }
                     }
+            )
+            // Mouse leaving the strip clears the hovered hour so the
+            // header text falls back to the day total.
+            .onHover { hovering in
+                if !hovering { hoveredHeatmapHour = nil }
             }
         }
+        .frame(height: 22)
     }
 
     /// Inline header text for the heatmap section. Day total when idle,
@@ -1778,6 +1799,28 @@ struct NotchContentView: View {
         let maxOpacity = 0.95
         let op = minOpacity + intensity * (maxOpacity - minOpacity)
         return accent.opacity(op)
+    }
+
+    /// Vertical gradient version of `cellColor` — same hue mapped to
+    /// a brighter top and dimmer bottom so the strip reads like a row
+    /// of glass tiles instead of flat blocks. Empty cells fall back to
+    /// a near-clear gradient that still shows the column position.
+    private func cellGradient(intensity: Double, isCurrent: Bool) -> LinearGradient {
+        if intensity <= 0 {
+            return LinearGradient(
+                colors: [Color.white.opacity(0.13), Color.white.opacity(0.04)],
+                startPoint: .top, endPoint: .bottom
+            )
+        }
+        let minOpacity = 0.18
+        let maxOpacity = 0.95
+        let op = minOpacity + intensity * (maxOpacity - minOpacity)
+        let topOp = min(1.0, op + 0.16)
+        let bottomOp = max(0.05, op - 0.22)
+        return LinearGradient(
+            colors: [accent.opacity(topOp), accent.opacity(bottomOp)],
+            startPoint: .top, endPoint: .bottom
+        )
     }
 
     private func hourTooltip(hour: Int, count: Int) -> String {
