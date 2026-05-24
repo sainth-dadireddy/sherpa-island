@@ -72,6 +72,27 @@ enum ProcessLookup {
         }
     }
 
+    /// Resident memory bytes + cumulative CPU time (user + system, nanoseconds)
+    /// for a process. CPU time alone isn't a percentage — sample twice and
+    /// take the delta over the wallclock interval to derive CPU%.
+    struct Resources {
+        let residentBytes: UInt64
+        let cpuTimeNanos: UInt64
+    }
+
+    static func resources(of pid: Int32) -> Resources? {
+        var info = proc_taskinfo()
+        let size = Int32(MemoryLayout<proc_taskinfo>.size)
+        let r = withUnsafeMutablePointer(to: &info) { ptr -> Int32 in
+            proc_pidinfo(pid, PROC_PIDTASKINFO, 0, ptr, size)
+        }
+        guard r > 0 else { return nil }
+        return Resources(
+            residentBytes: info.pti_resident_size,
+            cpuTimeNanos: info.pti_total_user &+ info.pti_total_system
+        )
+    }
+
     /// Strip trailing slashes and the `/private` prefix so cwds from libproc
     /// and from jsonl `cwd` fields compare equal.
     static func normalize(_ p: String) -> String {

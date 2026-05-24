@@ -38,6 +38,12 @@ struct ClaudeSession: Identifiable, Equatable {
     /// PID of the matched claude process — used by TerminalJumper to
     /// jump to the exact tmux pane when multiple sessions share a cwd.
     let claudePID: Int32?
+    /// Resident memory of the matched claude process, bytes. nil if no
+    /// pid matched or proc_pidinfo failed.
+    let memoryBytes: UInt64?
+    /// CPU percentage over the last refresh interval. nil on first
+    /// observation (need two samples). Can exceed 100% on multi-thread.
+    let cpuPercent: Double?
 }
 
 @MainActor
@@ -72,6 +78,10 @@ final class ClaudeMonitor: ObservableObject {
     /// PIDs of live claude processes per normalized cwd, refreshed each scan.
     /// Used to assign a specific PID to each session for tmux navigation.
     private var lastLiveClaudePIDs: [String: [Int32]] = [:]
+
+    /// Per-PID CPU samples: (wallclock observed, cumulative cpu nanos).
+    /// Two samples are needed to compute %; the first one returns nil.
+    private var cpuSamples: [Int32: (at: Date, cpuNanos: UInt64)] = [:]
 
     func start() {
         refresh()
@@ -236,6 +246,21 @@ final class ClaudeMonitor: ObservableObject {
                     ?? (c.parsed.contextTokens > 0 ? c.parsed.contextTokens : 0)
                 let stickyWindow = stickyContextWindow[c.jsonlPath] ?? 200_000
 
+                // Resource sample for the matched pid. CPU% needs two
+                // samples — first observation returns nil.
+                let pid: Int32? = idx < pids.count ? pids[idx] : nil
+                var memBytes: UInt64? = nil
+                var cpuPct: Double? = nil
+                if let pid, let res = ProcessLookup.resources(of: pid) {
+                    memBytes = res.residentBytes
+                    if let prev = cpuSamples[pid] {
+                        let dt = now.timeIntervalSince(prev.at)
+                        let dCpu = Double(res.cpuTimeNanos &- prev.cpuNanos) / 1_000_000_000
+                        if dt > 0 { cpuPct = (dCpu / dt) * 100 }
+                    }
+                    cpuSamples[pid] = (at: now, cpuNanos: res.cpuTimeNanos)
+                }
+
                 result.append(ClaudeSession(
                     id: c.sessionID,
                     projectName: c.projectName,
@@ -251,10 +276,15 @@ final class ClaudeMonitor: ObservableObject {
                     isActive: isActive,
                     contextTokens: stickyTokens,
                     contextWindow: stickyWindow,
-                    claudePID: idx < pids.count ? pids[idx] : nil
+                    claudePID: pid,
+                    memoryBytes: memBytes,
+                    cpuPercent: cpuPct
                 ))
             }
         }
+        // Drop CPU samples for PIDs that no longer exist.
+        let liveSet = Set(lastLiveClaudePIDs.values.flatMap { $0 })
+        cpuSamples = cpuSamples.filter { liveSet.contains($0.key) }
 
         // Evict stale cache entries for files that no longer exist.
         parseCache = parseCache.filter { livePaths.contains($0.key) }

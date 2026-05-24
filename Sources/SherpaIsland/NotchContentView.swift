@@ -2642,6 +2642,39 @@ struct NotchContentView: View {
         return String(format: "$%.1f", usd)
     }
 
+    /// Inline mini progress bar showing context-window fill for a
+    /// session. Lets the user spot when a session is approaching its
+    /// effective context cap and needs /compact. Green < 50%, yellow
+    /// 50-80%, red ≥ 80%.
+    private func contextFillBar(used: Int, window: Int) -> some View {
+        let fraction = max(0, min(1, Double(used) / Double(window)))
+        let pct = Int((fraction * 100).rounded())
+        let color: Color = fraction < 0.5 ? .green
+                         : fraction < 0.8 ? .yellow
+                         : .red
+        return HStack(spacing: 4) {
+            Circle()
+                .fill(Color.white.opacity(0.2))
+                .frame(width: 2, height: 2)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.1))
+                    Capsule()
+                        .fill(color.opacity(0.7))
+                        .frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 3)
+            .frame(maxWidth: 60)
+            Text("\(pct)%")
+                .font(.system(size: 9, weight: .medium, design: .rounded))
+                .foregroundColor(color.opacity(0.85))
+                .monospacedDigit()
+                .help("Context window: \(formatTokens(used)) / \(formatTokens(window))")
+        }
+    }
+
     private func tokenRow(label: String, value: Int, dim: Bool = false) -> some View {
         HStack {
             Text(label)
@@ -2659,6 +2692,19 @@ struct NotchContentView: View {
 
     /// Compact token count: 1234 → "1.2k", 12345 → "12k",
     /// 1234567 → "1.2M". Keeps header values readable.
+    /// Compact byte count: 524288 → "512K", 1572864 → "1.5M", etc.
+    /// Used for per-session resident memory in the row meta line.
+    private func formatBytes(_ b: UInt64) -> String {
+        let d = Double(b)
+        if d < 1024 { return "\(b)B" }
+        if d < 1024 * 1024 { return String(format: "%.0fK", d / 1024) }
+        if d < 1024 * 1024 * 1024 {
+            let mb = d / (1024 * 1024)
+            return mb < 100 ? String(format: "%.1fM", mb) : String(format: "%.0fM", mb)
+        }
+        return String(format: "%.1fG", d / (1024 * 1024 * 1024))
+    }
+
     private func formatTokens(_ n: Int) -> String {
         if n < 1000 { return "\(n)" }
         if n < 1_000_000 {
@@ -3632,7 +3678,27 @@ struct NotchContentView: View {
                     Text("up \(durationLabel(s.startTime))")
                         .font(.system(size: 9, design: .rounded))
                         .foregroundColor(.white.opacity(0.45))
-                    Spacer(minLength: 4)
+                    if let cpu = s.cpuPercent {
+                        Circle().fill(Color.white.opacity(0.2)).frame(width: 2, height: 2)
+                        Text("\(Int(cpu.rounded()))%cpu")
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundColor(.white.opacity(0.5))
+                            .monospacedDigit()
+                            .help("CPU usage of the matched claude process")
+                    }
+                    if let mem = s.memoryBytes {
+                        Circle().fill(Color.white.opacity(0.2)).frame(width: 2, height: 2)
+                        Text(formatBytes(mem))
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundColor(.white.opacity(0.5))
+                            .monospacedDigit()
+                            .help("Resident memory of the matched claude process")
+                    }
+                    if s.contextTokens > 0 && s.contextWindow > 0 {
+                        contextFillBar(used: s.contextTokens, window: s.contextWindow)
+                    } else {
+                        Spacer(minLength: 4)
+                    }
                     Text(relativeTime(s.lastActivity))
                         .font(.system(size: 9, design: .rounded))
                         .foregroundColor(.white.opacity(0.4))
