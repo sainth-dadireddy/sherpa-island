@@ -3638,6 +3638,12 @@ struct NotchContentView: View {
                             .foregroundColor(accent.opacity(0.85))
                             .help("Pinned to top — right-click row to unpin")
                     }
+                    if let g = toolActionGlyph(s.toolAction) {
+                        Image(systemName: g.symbol)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(g.color)
+                            .help("Current tool: \(String(describing: s.toolAction))")
+                    }
                     Text(s.projectName)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(.white)
@@ -3778,6 +3784,24 @@ struct NotchContentView: View {
     }
 
     /// Shortens model strings like "claude-opus-4-6" → "opus 4.6".
+    /// SF Symbol + tint for the current tool action a session is
+    /// performing. Lets the user see at a glance whether a session is
+    /// reading, editing, shelling, planning, etc. without expanding
+    /// the row.
+    private func toolActionGlyph(_ a: ToolAction) -> (symbol: String, color: Color)? {
+        switch a {
+        case .none:       return nil
+        case .reading:    return ("eye",                                  Color(red: 0.45, green: 0.75, blue: 1.00))
+        case .editing:    return ("pencil",                               Color(red: 1.00, green: 0.70, blue: 0.30))
+        case .shell:      return ("terminal",                             Color(red: 0.55, green: 0.85, blue: 0.55))
+        case .danger:     return ("exclamationmark.triangle.fill",        Color(red: 1.00, green: 0.40, blue: 0.40))
+        case .thinking:   return ("ellipsis.circle",                      Color(red: 0.85, green: 0.85, blue: 0.85))
+        case .web:        return ("globe",                                Color(red: 0.55, green: 0.85, blue: 0.95))
+        case .delegating: return ("person.2.fill",                        Color(red: 0.80, green: 0.65, blue: 1.00))
+        case .planning:   return ("list.bullet.clipboard",                Color(red: 1.00, green: 0.90, blue: 0.55))
+        }
+    }
+
     /// Brand color for a model family — Opus purple, Sonnet blue,
     /// Haiku teal. Used to color-code session rows so users juggling
     /// multiple sessions can distinguish them at a glance.

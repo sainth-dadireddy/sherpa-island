@@ -69,6 +69,12 @@ final class ClaudeMonitor: ObservableObject {
     /// tool-result entry (which have no usage block).
     private var stickyContextTokens: [String: Int] = [:]
 
+    /// Sticky per-jsonl last-tool-action. Keeps the last non-none
+    /// toolAction visible while the conversation pauses on a user
+    /// turn (latest entry is `type:user`), so the row icon doesn't
+    /// flicker off between tool calls.
+    private var stickyToolAction: [String: ToolAction] = [:]
+
     /// Sticky per-jsonl context window inference. Starts unknown;
     /// once a session is observed using > 190k tokens we're confident
     /// it's in Anthropic's 1M beta mode and pin the window to 1M
@@ -245,6 +251,15 @@ final class ClaudeMonitor: ObservableObject {
                 let stickyTokens = stickyContextTokens[c.jsonlPath]
                     ?? (c.parsed.contextTokens > 0 ? c.parsed.contextTokens : 0)
                 let stickyWindow = stickyContextWindow[c.jsonlPath] ?? 200_000
+                // Sticky toolAction — last non-none wins until the next
+                // tool call updates it.
+                let effectiveAction: ToolAction = {
+                    if c.parsed.toolAction != .none {
+                        stickyToolAction[c.jsonlPath] = c.parsed.toolAction
+                        return c.parsed.toolAction
+                    }
+                    return stickyToolAction[c.jsonlPath] ?? .none
+                }()
 
                 // Resource sample for the matched pid. CPU% needs two
                 // samples — first observation returns nil.
@@ -272,7 +287,7 @@ final class ClaudeMonitor: ObservableObject {
                     shortStatus: c.parsed.status,
                     model: c.parsed.model,
                     nativeMode: c.parsed.nativeMode,
-                    toolAction: c.parsed.toolAction,
+                    toolAction: effectiveAction,
                     isActive: isActive,
                     contextTokens: stickyTokens,
                     contextWindow: stickyWindow,
@@ -289,6 +304,7 @@ final class ClaudeMonitor: ObservableObject {
         // Evict stale cache entries for files that no longer exist.
         parseCache = parseCache.filter { livePaths.contains($0.key) }
         stickyContextTokens = stickyContextTokens.filter { livePaths.contains($0.key) }
+        stickyToolAction = stickyToolAction.filter { livePaths.contains($0.key) }
         stickyContextWindow = stickyContextWindow.filter { livePaths.contains($0.key) }
 
         return result.sorted { $0.lastActivity > $1.lastActivity }
