@@ -419,9 +419,17 @@ struct NotchContentView: View {
             if shouldShow {
                 if hasPendingPermission, let permission = hookBridge.pendingPermission {
                     permissionPanel(permission)
+                        // Permission requests slide down from under the
+                        // notch with a soft fade — feels like the panel
+                        // is being lowered rather than popped open.
                         .transition(
-                            .scale(scale: 0.04, anchor: expandedNotchAnchor)
-                            .combined(with: .opacity)
+                            .asymmetric(
+                                insertion: .move(edge: .top)
+                                    .combined(with: .opacity)
+                                    .combined(with: .scale(scale: 0.92, anchor: expandedNotchAnchor)),
+                                removal: .scale(scale: 0.04, anchor: expandedNotchAnchor)
+                                    .combined(with: .opacity)
+                            )
                         )
                 } else if expanded {
                     expandedPanel
@@ -2433,7 +2441,10 @@ struct NotchContentView: View {
                 shortcut: "⌘,",
                 style: .ghost,
                 accent: accent,
-                action: { hookBridge.deny(permission) }
+                action: {
+                    hapticTap(.levelChange)
+                    hookBridge.deny(permission)
+                }
             )
 
             PermissionButton(
@@ -2441,11 +2452,17 @@ struct NotchContentView: View {
                 shortcut: "⌘.",
                 style: .primary,
                 accent: accent,
-                action: { hookBridge.allow(permission) }
+                action: {
+                    hapticTap(.alignment)
+                    hookBridge.allow(permission)
+                }
             )
         }
 
-        Button { hookBridge.allowAlways(permission) } label: {
+        Button {
+            hapticTap(.generic)
+            hookBridge.allowAlways(permission)
+        } label: {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.shield")
                     .font(.system(size: 10, weight: .semibold))
@@ -2827,6 +2844,7 @@ struct NotchContentView: View {
                 VStack(spacing: 6) {
                     ForEach(permission.askOptions) { option in
                         Button {
+                            hapticTap(.alignment)
                             hookBridge.selectQuestionOption(permission, option: option)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
@@ -2869,7 +2887,10 @@ struct NotchContentView: View {
 
         Spacer(minLength: 0)
 
-        Button { hookBridge.deny(permission) } label: {
+        Button {
+            hapticTap(.levelChange)
+            hookBridge.deny(permission)
+        } label: {
             Text("Cancel")
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundColor(.white)
@@ -2886,6 +2907,13 @@ struct NotchContentView: View {
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.cancelAction)
+    }
+
+    /// Fires a single tactile tick on the trackpad. Used on permission
+    /// resolve buttons so an Allow/Deny choice feels confirmed even
+    /// before the panel finishes its slide-out transition.
+    private func hapticTap(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
     }
 
     private func permissionPanel(_ permission: PendingPermission) -> some View {
@@ -2938,7 +2966,15 @@ struct NotchContentView: View {
         .padding(.horizontal, 22)
         .padding(.bottom, 18)
         .frame(width: expandedWidth, height: expandedHeight, alignment: .top)
-        .background(shape.fill(Color.black))
+        // Blurred dark glass surface — ultraThinMaterial gives a soft
+        // backdrop blur even though the window is transparent, then a
+        // dark tint preserves contrast for the prompt text + buttons.
+        .background(
+            ZStack {
+                shape.fill(.ultraThinMaterial)
+                shape.fill(Color.black.opacity(0.78))
+            }
+        )
         .contentShape(shape)
         .contextMenu {
             Button("Quit Sherpa Island") { NSApp.terminate(nil) }
