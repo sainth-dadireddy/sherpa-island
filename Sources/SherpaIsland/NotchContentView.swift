@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 struct NotchContentView: View {
     @ObservedObject var monitor: ClaudeMonitor
@@ -942,6 +943,30 @@ struct NotchContentView: View {
             .onAppear { heatmap.refreshIfNeeded() }
         }
         .frame(width: expandedWidth, height: expandedHeight, alignment: .top)
+        .onDrop(of: [UTType.fileURL], isTargeted: $isFileDropTargeted) { providers in
+            handleFileDrop(providers)
+        }
+        .overlay(alignment: .top) {
+            // Drop-target hint border + transient toast confirmation.
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .strokeBorder(accent.opacity(isFileDropTargeted ? 0.85 : 0), lineWidth: 2)
+                    .allowsHitTesting(false)
+                if let msg = fileDropToast {
+                    Text(msg)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(Color.black.opacity(0.85)))
+                        .overlay(Capsule().stroke(accent.opacity(0.6), lineWidth: 0.5))
+                        .padding(.top, 18)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .animation(.easeInOut(duration: 0.18), value: isFileDropTargeted)
+            .animation(.easeInOut(duration: 0.18), value: fileDropToast)
+        }
         .background(shape.fill(Color.black))
         .overlay(alignment: .top) {
             if showingAppearancePicker {
@@ -2283,6 +2308,10 @@ struct NotchContentView: View {
 
     @State private var usageDetailShown = false
 
+    /// Drag-drop UI state for the file-path drop receiver.
+    @State private var isFileDropTargeted = false
+    @State private var fileDropToast: String? = nil
+
     /// Click-to-toggle the usage card. When live API data is
     /// available we show the exact 5h utilization % (same number
     /// Claude's account page shows). Falls back to a jsonl-derived
@@ -2640,6 +2669,43 @@ struct NotchContentView: View {
         if usd < 0.01 { return "<$0.01" }
         if usd < 10   { return String(format: "$%.2f", usd) }
         return String(format: "$%.1f", usd)
+    }
+
+    /// Handle one or more file URLs dropped onto the expanded panel.
+    /// Copies the absolute paths to the clipboard (newline-separated)
+    /// and shows a brief toast. Doesn't try to inject into a running
+    /// claude — that needs keystroke automation which is unreliable
+    /// from a background app. Paste manually with Cmd+V into your
+    /// terminal.
+    private func handleFileDrop(_ providers: [NSItemProvider]) -> Bool {
+        let group = DispatchGroup()
+        var paths: [String] = []
+        let lock = NSLock()
+        for provider in providers {
+            guard provider.canLoadObject(ofClass: URL.self) else { continue }
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url {
+                    lock.lock()
+                    paths.append(url.path)
+                    lock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            guard !paths.isEmpty else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(paths.joined(separator: "\n"), forType: .string)
+            let summary = paths.count == 1
+                ? "Copied path: \((paths[0] as NSString).lastPathComponent)"
+                : "Copied \(paths.count) paths to clipboard"
+            fileDropToast = summary
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+                fileDropToast = nil
+            }
+        }
+        return true
     }
 
     /// 12-bar sparkline of last hour's jsonl write activity. Renders
