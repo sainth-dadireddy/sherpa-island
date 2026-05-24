@@ -26,6 +26,12 @@ struct NotchContentView: View {
     @State private var lastLPMSpoken: Bool = false
     @State private var manualFanMode: String? = nil  // "max" | "auto" | nil
     @State private var manualFanToast: String? = nil
+    /// Position in the ⌘⇧T debug-temp cycle. 0 = real polling, 1-4 =
+    /// synthetic temps that walk through COOL → WARM → HOT → CRIT.
+    @State private var debugTempIdx: Int = 0
+    /// Transient toast displayed in place of `manualFanToast` while the
+    /// debug temperature override is active.
+    @State private var debugTempToast: String? = nil
     @EnvironmentObject var prefs: BuddyPreferences
     let notchWidth: CGFloat
     let notchHeight: CGFloat
@@ -554,6 +560,9 @@ struct NotchContentView: View {
             if shouldShow {
                 expanded.toggle()
             }
+        }
+        .onChange(of: hotkeys.debugTempCount) { _, _ in
+            cycleDebugTemp()
         }
         .onChange(of: monitor.sessions, initial: true) { _, newSessions in
             // Dismiss permission prompts that the user answered in
@@ -1889,18 +1898,28 @@ struct NotchContentView: View {
                 HStack(spacing: 6) {
                     sectionLabel("Thermal", count: tempPairs.count)
                     Spacer()
-                    if let toast = manualFanToast {
+                    // Debug-temp toast wins over the manual-fan toast
+                    // when both fire — the override is intentional and
+                    // worth highlighting.
+                    if let toast = debugTempToast ?? manualFanToast {
                         Text(toast)
                             .font(.system(size: 9, weight: .medium, design: .rounded))
                             .foregroundColor(.white.opacity(0.85))
                             .padding(.horizontal, 7)
                             .padding(.vertical, 2)
-                            .background(Capsule().fill(accent.opacity(0.25)))
+                            .background(
+                                Capsule().fill(
+                                    (debugTempToast != nil
+                                        ? Color.purple.opacity(0.35)
+                                        : accent.opacity(0.25))
+                                )
+                            )
                             .transition(.opacity.combined(with: .move(edge: .trailing)))
                     }
                     thermalManualButtons
                 }
                 .animation(.easeInOut(duration: 0.18), value: manualFanToast)
+                .animation(.easeInOut(duration: 0.18), value: debugTempToast)
                 if let hottest = tempPairs.first {
                     thermalHeroGauge(label: hottest.key, value: hottest.value)
                 }
@@ -2003,6 +2022,31 @@ struct NotchContentView: View {
         if c < 80 { return "WARM" }
         if c < 95 { return "HOT" }
         return "CRIT"
+    }
+
+    /// Walks the thermal display through every band without heating
+    /// the CPU. Cycle is COOL (50°C) → WARM (70°C) → HOT (88°C) →
+    /// CRIT (98°C) → real polling. A transient toast in the thermal
+    /// header confirms the active step so a manual test pass can be
+    /// driven from the keyboard.
+    private func cycleDebugTemp() {
+        let cycle: [(label: String, celsius: Double?)] = [
+            ("COOL 50°C", 50),
+            ("WARM 70°C", 70),
+            ("HOT 88°C",  88),
+            ("CRIT 98°C", 98),
+            ("Real sensors", nil)
+        ]
+        debugTempIdx = (debugTempIdx + 1) % cycle.count
+        let step = cycle[debugTempIdx]
+        temps.injectDebugTemp(step.celsius)
+        debugTempToast = "Debug temp → \(step.label)"
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            if debugTempToast == "Debug temp → \(step.label)" {
+                debugTempToast = nil
+            }
+        }
     }
 
     /// Manual "Blow Max" + "Auto" buttons, only when thermalforge is

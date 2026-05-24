@@ -6,6 +6,11 @@ import Combine
 class TemperatureMonitor: ObservableObject {
     @Published var sensors: [String: Double] = [:]
     @Published var isMonitoring: Bool = false
+    /// When non-nil, real SMC polling is suspended and the published
+    /// sensor dictionary holds synthesized values around this Celsius
+    /// reading. Lets the debug shortcut walk the buddy/voice through
+    /// every thermal band without actually heating the machine.
+    @Published var debugOverrideC: Double? = nil
 
     private var timer: Timer?
     private let queue = DispatchQueue(label: "com.sherpa.temperature-monitor", qos: .utility)
@@ -46,7 +51,29 @@ class TemperatureMonitor: ObservableObject {
         }
     }
 
+    /// Inject a synthetic primary-CPU temperature for debug. Passing
+    /// nil clears the override and lets the next poll repopulate
+    /// `sensors` from real SMC reads.
+    func injectDebugTemp(_ celsius: Double?) {
+        DispatchQueue.main.async {
+            self.debugOverrideC = celsius
+            guard let c = celsius else {
+                self.sensors = [:]
+                return
+            }
+            self.sensors = [
+                "cpu_p_cores": c,
+                "cpu_e_cores": max(20, c - 4),
+                "gpu":         max(20, c - 2),
+                "ssd":         max(28, c - 15),
+                "battery":     max(26, c - 25),
+                "ambient":     max(22, c - 30)
+            ]
+        }
+    }
+
     private func pollSensors() {
+        if debugOverrideC != nil { return }
         queue.async { [weak self] in
             guard let self else { return }
 

@@ -21,6 +21,12 @@ final class GlobalHotkeys: ObservableObject {
     /// to toggle its expanded state without needing a direct reference.
     @Published var toggleCount: Int = 0
 
+    /// Incremented each time ⌘⇧T is pressed — observed by the thermal
+    /// section to cycle through synthetic debug temperatures so band
+    /// transitions, voice alerts and color ramps can be exercised
+    /// without actually heating the machine.
+    @Published var debugTempCount: Int = 0
+
     /// True when accessibility access is missing — drives an inline
     /// banner in the notch panel.
     @Published var accessibilityMissing = false
@@ -97,11 +103,25 @@ final class GlobalHotkeys: ObservableObject {
     }
 
     private func handleKey(_ event: NSEvent) {
+        let mods = event.modifierFlags
+
+        // ⌘⇧T → debug temperature cycle. Handled before the strict
+        // "command-only" guard below so this is the one shortcut that
+        // accepts shift.
+        if mods.contains(.command) && mods.contains(.shift)
+            && !mods.contains(.control) && !mods.contains(.option),
+           let chars = event.charactersIgnoringModifiers?.lowercased(),
+           chars == "t"
+        {
+            debugTempCount &+= 1
+            return
+        }
+
         // Only respond to ⌘+key (no other modifiers like shift/ctrl/option)
-        guard event.modifierFlags.contains(.command),
-              !event.modifierFlags.contains(.shift),
-              !event.modifierFlags.contains(.control),
-              !event.modifierFlags.contains(.option)
+        guard mods.contains(.command),
+              !mods.contains(.shift),
+              !mods.contains(.control),
+              !mods.contains(.option)
         else { return }
 
         switch event.charactersIgnoringModifiers {
