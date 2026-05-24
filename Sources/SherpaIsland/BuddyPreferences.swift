@@ -301,6 +301,25 @@ final class BuddyPreferences: ObservableObject {
         }
     }
 
+    /// Shell command Sherpa Island runs (via `/bin/zsh -lc`) when the
+    /// hottest temperature sensor crosses into the hot band. Empty =
+    /// no action. Example: `sudo pmset -a forcefans 6500` (requires
+    /// passwordless sudo entry the user sets up in /etc/sudoers.d).
+    @Published var thermalActionCommand: String {
+        didSet {
+            UserDefaults.standard.set(thermalActionCommand, forKey: Self.thermalActionKey)
+        }
+    }
+
+    /// Shell command run when temperature is hot/critical AND macOS
+    /// Low Power Mode is enabled — so the user can flip out of LPM
+    /// for full performance. Example: `sudo pmset -b lowpowermode 0`.
+    @Published var lowPowerActionCommand: String {
+        didSet {
+            UserDefaults.standard.set(lowPowerActionCommand, forKey: Self.lowPowerActionKey)
+        }
+    }
+
     /// Returns true iff the master toggle is on AND this specific event's
     /// flag is on. Use this at every `speak` call site.
     func voiceAllows(_ event: VoiceEvent) -> Bool {
@@ -401,6 +420,8 @@ final class BuddyPreferences: ObservableObject {
     private static let voiceEventsKey = "sherpaisland.voice.events"
     private static let voiceIdentifierKey = "sherpaisland.voice.identifier"
     private static let voiceRateKey = "sherpaisland.voice.rate"
+    private static let thermalActionKey = "sherpaisland.thermal.action"
+    private static let lowPowerActionKey = "sherpaisland.thermal.lpm_off_action"
     private static let alwaysVisibleKey = "sherpaisland.alwaysVisible"
     private static let startAtLoginKey = "sherpaisland.startAtLogin"
     private static let hapticsKey = "sherpaisland.haptics"
@@ -428,6 +449,8 @@ final class BuddyPreferences: ObservableObject {
         voiceEnabled = defaults.object(forKey: Self.voiceKey) as? Bool ?? false
         voiceIdentifier = defaults.string(forKey: Self.voiceIdentifierKey) ?? ""
         voiceRate = defaults.object(forKey: Self.voiceRateKey) as? Double ?? 1.05
+        thermalActionCommand = defaults.string(forKey: Self.thermalActionKey) ?? ""
+        lowPowerActionCommand = defaults.string(forKey: Self.lowPowerActionKey) ?? ""
         alwaysVisible = defaults.object(forKey: Self.alwaysVisibleKey) as? Bool ?? true
         startAtLogin = defaults.object(forKey: Self.startAtLoginKey) as? Bool ?? true
         hapticsEnabled = defaults.object(forKey: Self.hapticsKey) as? Bool ?? true

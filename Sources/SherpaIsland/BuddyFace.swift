@@ -275,7 +275,17 @@ private struct EyesBuddy: View {
             withAnimation(.easeInOut(duration: 2.8).repeatForever(autoreverses: true)) {
                 breathe = -0.5
             }
-        case .idle, .sleeping:
+        case .idle:
+            // Subtle "alive" idle: slow breathe + gentle pulse so the
+            // buddy doesn't look frozen. Gaze loop below still randomly
+            // glances around.
+            withAnimation(.easeInOut(duration: 3.6).repeatForever(autoreverses: true)) {
+                breathe = -0.4
+            }
+            withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
+                pulse = 1.02
+            }
+        case .sleeping:
             break
         }
 

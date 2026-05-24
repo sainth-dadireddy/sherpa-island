@@ -12,6 +12,14 @@ struct NotchContentView: View {
     @ObservedObject var speechController: SpeechController
     @ObservedObject var updateChecker: UpdateChecker
     @ObservedObject var hotkeys: GlobalHotkeys
+
+    /// Thermal + fan UI state — owned here so polling pauses with the
+    /// panel's lifecycle (closing the notch tears them down).
+    @StateObject private var temps = TemperatureMonitor()
+    @StateObject private var fans = FanController()
+    @StateObject private var power = PowerMonitor()
+    @State private var lastThermalSpoken: String = ""
+    @State private var lastLPMSpoken: Bool = false
     @EnvironmentObject var prefs: BuddyPreferences
     let notchWidth: CGFloat
     let notchHeight: CGFloat
@@ -967,6 +975,7 @@ struct NotchContentView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     sessionsSection
                     heatmapSection
+                    thermalSection
                     recentHooksSection
                     recentArchiveSection
                 }
@@ -1761,6 +1770,216 @@ struct NotchContentView: View {
         let h12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour)
         let ampm = hour < 12 ? "AM" : "PM"
         return "\(h12) \(ampm) — \(count) \(suffix)"
+    }
+
+    // MARK: - Thermal (read-only display + voice alert)
+
+    @ViewBuilder
+    private var thermalSection: some View {
+        let tempPairs = temps.sensors.sorted { $0.value > $1.value }
+        if !tempPairs.isEmpty || fans.leftFanRPM > 0 || fans.rightFanRPM > 0 {
+            VStack(alignment: .leading, spacing: 6) {
+                sectionLabel("Thermal", count: tempPairs.count)
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 92), spacing: 6)],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    ForEach(Array(tempPairs.prefix(6)), id: \.key) { pair in
+                        thermalChip(label: pair.key, value: pair.value)
+                    }
+                }
+                HStack(spacing: 14) {
+                    thermalFanChip(label: "Left fan",  rpm: fans.leftFanRPM)
+                    thermalFanChip(label: "Right fan", rpm: fans.rightFanRPM)
+                    Spacer()
+                    if !fans.hasController {
+                        Text("read-only")
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                HStack(spacing: 14) {
+                    if power.hasBattery {
+                        powerChip(
+                            icon: power.isOnAC ? "powerplug.fill" : "battery.50",
+                            label: "\(power.batteryPercent)%",
+                            color: batteryColor(power.batteryPercent),
+                            help: power.isOnAC ? "On AC power" : "On battery"
+                        )
+                    }
+                    if power.isLowPowerMode {
+                        powerChip(
+                            icon: "leaf.fill",
+                            label: "Low Power",
+                            color: Color(red: 1.0, green: 0.78, blue: 0.35),
+                            help: "macOS Low Power Mode is throttling CPU/GPU. Disable in System Settings → Battery if you need full performance."
+                        )
+                    }
+                    Spacer()
+                }
+            }
+            .onChange(of: temps.sensors) { _, _ in announceThermalIfNeeded() }
+        }
+    }
+
+    private func thermalChip(label: String, value: Double) -> some View {
+        let color = thermalColor(value)
+        return HStack(spacing: 4) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(thermalShort(label))
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.75))
+            Text(String(format: "%.0f°", value))
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(color)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.12)))
+        .overlay(Capsule().stroke(color.opacity(0.3), lineWidth: 0.5))
+    }
+
+    private func thermalFanChip(label: String, rpm: Int) -> some View {
+        let color = fanRpmColor(rpm)
+        return HStack(spacing: 4) {
+            Image(systemName: "fanblades")
+                .font(.system(size: 9))
+                .foregroundColor(color.opacity(0.7))
+            Text(label)
+                .font(.system(size: 10, design: .rounded))
+                .foregroundColor(.white.opacity(0.6))
+            Text(rpm > 0 ? "\(rpm) RPM" : "—")
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(color)
+                .monospacedDigit()
+        }
+    }
+
+    /// Approximate RPM bands for MacBook Pro fans: idle ~1200-2000,
+    /// active ~2000-4000, max ~5500-6500. Tweak per chassis.
+    private func fanRpmColor(_ rpm: Int) -> Color {
+        if rpm <= 0       { return .white.opacity(0.5) }
+        if rpm < 2500     { return .green }
+        if rpm < 4500     { return .yellow }
+        return Color(red: 1.0, green: 0.4, blue: 0.4)
+    }
+
+    private func batteryColor(_ pct: Int) -> Color {
+        if pct < 0 { return .white.opacity(0.5) }
+        if pct < 20 { return Color(red: 1.0, green: 0.4, blue: 0.4) }
+        if pct < 50 { return .yellow }
+        return .green
+    }
+
+    private func powerChip(icon: String, label: String, color: Color, help: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 9))
+                .foregroundColor(color.opacity(0.85))
+            Text(label)
+                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                .foregroundColor(color)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(color.opacity(0.12)))
+        .overlay(Capsule().stroke(color.opacity(0.3), lineWidth: 0.5))
+        .help(help)
+    }
+
+    /// Runs the user-configured "thermal action" shell command when
+    /// the hottest sensor crosses into the hot/critical band. Throttled
+    /// inside announceThermalIfNeeded (band change required).
+    private func runThermalAction(reason: String) {
+        let cmd = prefs.thermalActionCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty else { return }
+        let task = Process()
+        task.launchPath = "/bin/zsh"
+        task.arguments = ["-lc", cmd]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        do { try task.run() } catch {
+            NSLog("[SherpaIsland] thermal action failed: \(error) — reason: \(reason)")
+        }
+    }
+
+    private func thermalColor(_ celsius: Double) -> Color {
+        if celsius < 55 { return .green }
+        if celsius < 75 { return .yellow }
+        return Color(red: 1.0, green: 0.4, blue: 0.4)
+    }
+
+    /// Shortens sensor keys like "cpu_p_cores" → "P-Core" or
+    /// "ambient" → "Ambient" for the chip label.
+    private func thermalShort(_ key: String) -> String {
+        switch key {
+        case "cpu_p_cores": return "P-Core"
+        case "cpu_e_cores": return "E-Core"
+        case "gpu":         return "GPU"
+        case "ambient":     return "Ambient"
+        default:            return key.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// Speak a thermal alert when the hottest sensor crosses a band.
+    /// Throttled so we only announce on band changes, not every tick.
+    private func announceThermalIfNeeded() {
+        guard let hottest = temps.sensors.max(by: { $0.value < $1.value }) else { return }
+        let band: String
+        switch hottest.value {
+        case ..<55:  band = "cool"
+        case 55..<75: band = "warm"
+        case 75..<85: band = "hot"
+        default:      band = "critical"
+        }
+        guard band != lastThermalSpoken else { return }
+        lastThermalSpoken = band
+        // Reset the LPM-spoken latch whenever we drop back to cool/warm
+        // so the next hot-band crossing can speak again.
+        if band == "cool" || band == "warm" { lastLPMSpoken = false }
+        if band == "hot" {
+            VoiceAnnouncer.shared.speak(
+                "Temperature warm. Fans ramping up.",
+                event: .modeChange,
+                prefs: prefs
+            )
+            runThermalAction(reason: "hot band")
+            maybeOffLowPowerMode(reason: "hot")
+        } else if band == "critical" {
+            VoiceAnnouncer.shared.speak(
+                "Temperature critical. Left and right fans at full.",
+                event: .modeChange,
+                prefs: prefs
+            )
+            runThermalAction(reason: "critical band")
+            maybeOffLowPowerMode(reason: "critical")
+        }
+    }
+
+    /// When the system is in Low Power Mode AND we just hit a hot
+    /// thermal band, the CPU is being throttled at the same time the
+    /// chip is heating up — usually a workload mismatch. Speak the
+    /// warning + (if user configured) run the lpm-off shell command.
+    private func maybeOffLowPowerMode(reason: String) {
+        guard power.isLowPowerMode, !lastLPMSpoken else { return }
+        lastLPMSpoken = true
+        VoiceAnnouncer.shared.speak(
+            "Low Power Mode is on while temperature climbs. Consider switching to high performance.",
+            event: .modeChange,
+            prefs: prefs
+        )
+        let cmd = prefs.lowPowerActionCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty else { return }
+        let task = Process()
+        task.launchPath = "/bin/zsh"
+        task.arguments = ["-lc", cmd]
+        task.standardOutput = Pipe()
+        task.standardError = Pipe()
+        do { try task.run() } catch {
+            NSLog("[SherpaIsland] lpm-off action failed: \(error) reason=\(reason)")
+        }
     }
 
     // MARK: - Recent (archived) sessions
