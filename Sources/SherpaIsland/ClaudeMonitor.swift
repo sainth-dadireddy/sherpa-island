@@ -193,16 +193,22 @@ final class ClaudeMonitor: ObservableObject {
                 guard !parsed.cwd.isEmpty else { continue }
 
                 // Sticky context token + window update: remember the
-                // last observed token count and lock the window to 1M
-                // if we've ever seen > 190k on this session.
+                // last observed token count and pick the window from the
+                // model id so the bar matches Claude Code's `/context`
+                // denominator from the first parse — not after we cross
+                // 190k. Opus 4.7 ships with the 1M context beta enabled
+                // on Max; older models stay at 200K.
                 if parsed.contextTokens > 0 {
                     stickyContextTokens[jsonlURL.path] = parsed.contextTokens
-                    if parsed.contextTokens > 190_000 {
-                        stickyContextWindow[jsonlURL.path] = 1_000_000
-                    } else if stickyContextWindow[jsonlURL.path] == nil {
-                        stickyContextWindow[jsonlURL.path] = 200_000
-                    }
                 }
+                let modelWindow: Int = {
+                    let m = parsed.model.lowercased()
+                    if m.contains("opus-4-7") || m.contains("opus-4.7") { return 1_000_000 }
+                    if parsed.contextTokens > 190_000 { return 1_000_000 }
+                    return 200_000
+                }()
+                let prevWindow = stickyContextWindow[jsonlURL.path] ?? 0
+                stickyContextWindow[jsonlURL.path] = max(prevWindow, modelWindow)
 
                 let projectName = (parsed.cwd as NSString).lastPathComponent
                 let startTime: Date = {
