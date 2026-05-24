@@ -59,6 +59,19 @@ final class GlobalHotkeys: ObservableObject {
         }
     }
 
+    /// Manually re-check accessibility (called from UI Recheck button
+    /// and from NSApplication.didBecomeActive). If granted, also restart
+    /// monitors so the shortcuts work without needing a relaunch.
+    func recheckAccessibility() {
+        if AXIsProcessTrusted() {
+            accessibilityMissing = false
+            stop()
+            setupMonitors()
+        } else {
+            accessibilityMissing = true
+        }
+    }
+
     /// Poll every 2 seconds until accessibility is granted, then
     /// restart the monitors (they silently fail without the permission).
     private func pollForAccessibility() {

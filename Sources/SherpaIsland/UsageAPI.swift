@@ -87,16 +87,10 @@ enum UsageAPI {
         let secondsUntilExpiry = expiresAt - now
         let readTime = Date().timeIntervalSince(start)
         if now < expiresAt {
-            print(String(
-                format: "[UsageAPI] keychain read ok in %.2fs · token expires in %.0fs",
-                readTime, secondsUntilExpiry
-            ))
+            dlog("creds read ok in \(readTime)s · token expires in \(secondsUntilExpiry)s")
             return creds.accessToken
         }
-        print(String(
-            format: "[UsageAPI] token expired (by %.0fs) · returning nil",
-            -secondsUntilExpiry
-        ))
+        dlog("token expired by \(-secondsUntilExpiry)s · returning nil")
         // Expired — return nil, UI will show fallback
         return nil
     }
@@ -107,19 +101,31 @@ enum UsageAPI {
     }
 
     private static func readCredentials() -> Credentials? {
-        // Try the on-disk credentials file first. Claude Code keeps
-        // `~/.claude/.credentials.json` in sync with the keychain, and a
-        // direct read avoids the keychain ACL prompt that wedges background
-        // apps (LSUIElement) when /usr/bin/security tries to authorize.
-        if let creds = readCredentialsFile() {
-            return creds
+        // The on-disk file (~/.claude/.cred*.json) is fast and avoids the
+        // keychain ACL prompt that wedges LSUIElement apps. It's NOT always
+        // in sync with the keychain — Claude Code refreshes the keychain
+        // token but doesn't always rewrite the file — so only trust it if
+        // the embedded expiresAt is still in the future.
+        let fileCreds = readCredentialsFile()
+        if let f = fileCreds, f.expiresAt / 1000 > Date().timeIntervalSince1970 {
+            return f
         }
-        // Fallback: keychain via `/usr/bin/security`. Account-specific
-        // entry first (freshest), then the null-account entry.
+        dlog("file creds missing or expired — trying keychain")
+
+        // Keychain via `/usr/bin/security`. Account-specific entry first
+        // (freshest after a refresh), then the null-account entry. Both
+        // are guarded by a 4s timeout in readKeychainEntry so a hung
+        // permission prompt can't wedge the polling task.
         if let creds = readKeychainEntry(account: NSUserName()) {
             return creds
         }
-        return readKeychainEntry(account: nil)
+        if let creds = readKeychainEntry(account: nil) {
+            return creds
+        }
+        // Last resort: return the (expired) file creds anyway so callers
+        // can surface a clearer "token expired" state. accessToken() will
+        // reject it.
+        return fileCreds
     }
 
     private static func readCredentialsFile() -> Credentials? {
@@ -218,45 +224,29 @@ enum UsageAPI {
             let (data, response) = try await URLSession.shared.data(for: req)
             let elapsed = Date().timeIntervalSince(start)
             guard let http = response as? HTTPURLResponse else {
-                print(String(
-                    format: "[UsageAPI] non-HTTP response in %.2fs", elapsed
-                ))
+                dlog("non-HTTP response in \(elapsed)s")
                 return .failed
             }
             if http.statusCode == 429 {
                 let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")
                     .flatMap(TimeInterval.init)) ?? defaultRateLimitBackoff
-                print(String(
-                    format: "[UsageAPI] HTTP 429 in %.2fs · backing off %.0fs",
-                    elapsed, retryAfter
-                ))
+                dlog("HTTP 429 in \(elapsed)s · backing off \(retryAfter)s")
                 return .rateLimited(retryAfter: retryAfter)
             }
             guard http.statusCode == 200 else {
                 let body = String(data: data, encoding: .utf8)?.prefix(200) ?? ""
-                print(String(
-                    format: "[UsageAPI] HTTP %d in %.2fs · body=%@",
-                    http.statusCode, elapsed, String(body)
-                ))
+                dlog("HTTP \(http.statusCode) in \(elapsed)s · body=\(body)")
                 return .failed
             }
             guard let parsed = parse(data) else {
-                print(String(
-                    format: "[UsageAPI] HTTP 200 in %.2fs · parse failed", elapsed
-                ))
+                dlog("HTTP 200 in \(elapsed)s · parse failed")
                 return .failed
             }
-            print(String(
-                format: "[UsageAPI] HTTP 200 in %.2fs · parsed ok",
-                elapsed
-            ))
+            dlog("HTTP 200 in \(elapsed)s · parsed ok")
             return .success(parsed)
         } catch {
             let elapsed = Date().timeIntervalSince(start)
-            print(String(
-                format: "[UsageAPI] request error in %.2fs: %@",
-                elapsed, String(describing: error)
-            ))
+            dlog("request error in \(elapsed)s: \(error)")
             return .failed
         }
     }

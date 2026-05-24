@@ -2713,6 +2713,22 @@ struct NotchContentView: View {
             Spacer(minLength: 4)
 
             Button {
+                hotkeys.recheckAccessibility()
+            } label: {
+                Text("Recheck")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.75))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(Color.white.opacity(0.08))
+                    )
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
                 // Open System Settings directly to Accessibility
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
                     NSWorkspace.shared.open(url)

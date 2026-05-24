@@ -126,7 +126,11 @@ final class NotchWindow: NSPanel {
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
-        self.level = .statusBar
+        // Use popUpMenu (101) instead of statusBar (25) so the notch
+        // floats above other apps' full-screen Spaces. statusBar level
+        // alone is hidden when another app's menu bar auto-hides in
+        // full-screen mode.
+        self.level = .popUpMenu
         self.isMovable = false
         self.ignoresMouseEvents = false
         self.acceptsMouseMovedEvents = true
@@ -754,7 +758,11 @@ final class SnapPreviewWindow: NSPanel {
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = false
-        self.level = .statusBar
+        // Use popUpMenu (101) instead of statusBar (25) so the notch
+        // floats above other apps' full-screen Spaces. statusBar level
+        // alone is hidden when another app's menu bar auto-hides in
+        // full-screen mode.
+        self.level = .popUpMenu
         self.ignoresMouseEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.alphaValue = 0

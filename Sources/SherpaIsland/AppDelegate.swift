@@ -37,6 +37,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupHotkeys()
         setupStatusItem()
 
+        // Re-check accessibility whenever the app gains focus. After the
+        // user grants permission in System Settings and switches back, the
+        // banner should clear without waiting for the 2s poll tick or a
+        // relaunch.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.hotkeys.recheckAccessibility()
+            }
+        }
+
         // Force the onboarding on every launch when the debug env var
         // is set (useful for iterating on the intro animation without
         // blowing away UserDefaults).
