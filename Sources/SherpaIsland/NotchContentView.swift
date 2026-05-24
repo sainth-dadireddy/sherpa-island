@@ -2423,8 +2423,6 @@ struct NotchContentView: View {
             // below with the full breakdown.
             usagePill
 
-            costPill
-
             Spacer(minLength: 4)
 
             statBadge
