@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 
-/// Polls the GitHub Releases API for the latest Notch Pilot version
+/// Polls the GitHub Releases API for the latest Sherpa Island version
 /// and compares it against the running app's `CFBundleShortVersionString`.
 /// Publishes the result so the UI can show an unobtrusive upgrade badge.
 ///
@@ -37,7 +37,7 @@ final class UpdateChecker: ObservableObject {
             return v
         }
         // Debug build — check the installed .app's version instead
-        if let installed = Bundle(path: "/Applications/Notch Pilot.app"),
+        if let installed = Bundle(path: "/Applications/Sherpa Island.app"),
            let v = installed.infoDictionary?["CFBundleShortVersionString"] as? String {
             return v
         }
@@ -141,7 +141,7 @@ final class UpdateChecker: ObservableObject {
 
         if success {
             // 3. Verify the installed version actually changed
-            let installedVersion = Bundle(path: "/Applications/Notch Pilot.app")?
+            let installedVersion = Bundle(path: "/Applications/Sherpa Island.app")?
                 .infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
             if let latest = latestVersion, isNewer(remote: latest, local: installedVersion) {
                 // Brew said success but version didn't change — try reinstall
@@ -155,7 +155,7 @@ final class UpdateChecker: ObservableObject {
             }
 
             // Relaunch
-            let appPath = "/Applications/Notch Pilot.app"
+            let appPath = "/Applications/Sherpa Island.app"
             let pid = ProcessInfo.processInfo.processIdentifier
             let relaunchScript = FileManager.default.temporaryDirectory
                 .appendingPathComponent("notchpilot-relaunch.sh")

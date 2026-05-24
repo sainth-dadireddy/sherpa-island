@@ -152,7 +152,7 @@ enum HookClient {
         }
 
         let behavior = respObj["behavior"] as? String ?? ""
-        let message = (respObj["message"] as? String) ?? "Denied via Notch Pilot"
+        let message = (respObj["message"] as? String) ?? "Denied via Sherpa Island"
 
         // Output the official PermissionRequest decision schema. Keep it
         // strict — any extraneous top-level fields (e.g., "decision":

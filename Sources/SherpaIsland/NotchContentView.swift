@@ -712,7 +712,7 @@ struct NotchContentView: View {
         .background(shape.fill(Color.black))
         .contentShape(shape)
         .contextMenu {
-            Button("Quit Notch Pilot") { NSApp.terminate(nil) }
+            Button("Quit Sherpa Island") { NSApp.terminate(nil) }
         }
     }
 
@@ -887,7 +887,7 @@ struct NotchContentView: View {
             }
         }
         .contextMenu {
-            Button("Quit Notch Pilot") { NSApp.terminate(nil) }
+            Button("Quit Sherpa Island") { NSApp.terminate(nil) }
         }
         .offset(x: pillOffsetX)
     }
@@ -1011,7 +1011,7 @@ struct NotchContentView: View {
             }
         }
         .contextMenu {
-            Button("Quit Notch Pilot") { NSApp.terminate(nil) }
+            Button("Quit Sherpa Island") { NSApp.terminate(nil) }
         }
     }
 
@@ -2191,7 +2191,7 @@ struct NotchContentView: View {
         .background(shape.fill(Color.black))
         .contentShape(shape)
         .contextMenu {
-            Button("Quit Notch Pilot") { NSApp.terminate(nil) }
+            Button("Quit Sherpa Island") { NSApp.terminate(nil) }
         }
     }
 
@@ -2204,7 +2204,7 @@ struct NotchContentView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text("Notch Pilot")
+                    Text("Sherpa Island")
                         .font(.system(size: 15, weight: .semibold, design: .rounded))
                         .foregroundColor(.white)
                     Text("v\(updateChecker.currentVersion)")
@@ -2744,7 +2744,7 @@ struct NotchContentView: View {
     }
 
     /// Power icon that quits the app. The menu bar icon was removed to
-    /// keep Notch Pilot's surface area limited to the notch itself, so
+    /// keep Sherpa Island's surface area limited to the notch itself, so
     /// this is now the only discoverable quit path (besides right-click
     /// context menus). Dim until hovered, then reddish.
     @State private var quitHovered = false
@@ -2772,7 +2772,7 @@ struct NotchContentView: View {
         .buttonStyle(.plain)
         .onHover { quitHovered = $0 }
         .animation(.easeOut(duration: 0.15), value: quitHovered)
-        .help("Quit Notch Pilot")
+        .help("Quit Sherpa Island")
     }
 
     // MARK: - Appearance (style + color) picker
@@ -2962,7 +2962,7 @@ struct NotchContentView: View {
                 iconOn: "power",
                 iconOff: "power",
                 title: "Start at login",
-                subtitle: "Auto-launch Notch Pilot when you log in",
+                subtitle: "Auto-launch Sherpa Island when you log in",
                 isOn: $prefs.startAtLogin
             )
 

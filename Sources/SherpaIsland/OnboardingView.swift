@@ -58,7 +58,7 @@ struct OnboardingView: View {
     @State private var finished = false
 
     private let copy = [
-        "Hi, I'm Notch Pilot.",
+        "Hi, I'm Sherpa Island.",
         "I live in your notch now.",
         "Hover up to say hi.",
     ]

@@ -241,7 +241,7 @@ final class HookBridge: ObservableObject {
         } else {
             answer = option.label
         }
-        let message = "The user answered your AskUserQuestion via the Notch Pilot UI. Their answer: \"\(answer)\". Treat this as if the tool had returned this selection and continue."
+        let message = "The user answered your AskUserQuestion via the Sherpa Island UI. Their answer: \"\(answer)\". Treat this as if the tool had returned this selection and continue."
         permission.respond(SocketServer.Response(payload: [
             "behavior": "deny",
             "message": message

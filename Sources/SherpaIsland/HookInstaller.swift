@@ -42,7 +42,7 @@ enum HookInstaller {
     /// Build the shell command string Claude Code invokes. Claude Code
     /// runs hook commands via the shell, so space-separated args work —
     /// but we still quote the exe path in case it contains spaces (e.g.
-    /// "/Applications/Notch Pilot.app/…").
+    /// "/Applications/Sherpa Island.app/…").
     private static func hookCommand() -> String {
         let path = executablePath
         let quoted = path.contains(" ") ? "\"\(path)\"" : path
