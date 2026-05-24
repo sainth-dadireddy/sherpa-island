@@ -1250,7 +1250,8 @@ struct NotchContentView: View {
     }
 
     private func sessionEventRow(_ event: SessionEvent) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let isCodey = event.kind == .toolUse || event.kind == .toolResult
+        return HStack(alignment: .top, spacing: 10) {
             Image(systemName: event.icon)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(eventIconColor(event))
@@ -1259,7 +1260,7 @@ struct NotchContentView: View {
                     Circle().fill(eventIconBackground(event))
                 )
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(event.label)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -1271,17 +1272,23 @@ struct NotchContentView: View {
                         .monospacedDigit()
                 }
                 if !event.body.isEmpty {
-                    Text(event.body)
+                    eventBodyText(event)
                         .font(.system(
                             size: 11,
-                            design: event.kind == .toolUse || event.kind == .toolResult
-                                ? .monospaced : .default
+                            design: isCodey ? .monospaced : .default
                         ))
-                        .foregroundColor(.white.opacity(0.78))
-                        .lineLimit(20)
+                        .foregroundColor(.white.opacity(0.82))
+                        .lineLimit(40)
                         .truncationMode(.tail)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(isCodey ? 8 : 0)
+                        .background(
+                            isCodey
+                                ? RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    .fill(Color.white.opacity(0.04))
+                                : nil
+                        )
                 }
             }
         }
@@ -1290,8 +1297,40 @@ struct NotchContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color.white.opacity(0.035))
+                .fill(eventRowBackground(event))
         )
+    }
+
+    /// Renders the event body. Assistant text gets markdown rendering
+    /// (bold/italic/`inline code`/links). Tool blocks stay raw monospace.
+    @ViewBuilder
+    private func eventBodyText(_ event: SessionEvent) -> some View {
+        switch event.kind {
+        case .assistantText, .user:
+            if let attributed = try? AttributedString(
+                markdown: event.body,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            ) {
+                Text(attributed)
+            } else {
+                Text(event.body)
+            }
+        default:
+            Text(event.body)
+        }
+    }
+
+    /// Distinct row tint by sender so the detail view reads like a chat.
+    private func eventRowBackground(_ event: SessionEvent) -> Color {
+        switch event.kind {
+        case .user:          return Color.white.opacity(0.07)
+        case .assistantText: return accentDim.opacity(0.4)
+        case .toolUse:       return Color.white.opacity(0.025)
+        case .toolResult:    return event.isError
+            ? Color.red.opacity(0.08)
+            : Color.white.opacity(0.025)
+        case .thinking:      return Color.white.opacity(0.02)
+        }
     }
 
     private func eventIconColor(_ event: SessionEvent) -> Color {
