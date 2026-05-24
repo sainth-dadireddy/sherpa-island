@@ -33,8 +33,11 @@ struct NotchOrganizer: View {
     @ObservedObject var autoMode: AutoModeSwitcher
     @State var selectedTab: WidgetTab = .claude
 
-    /// Track collapsed/expanded state
-    @State private var isExpanded = false
+    /// Track collapsed/expanded state.
+    /// Defaults to true: NotchOrganizer is only mounted by NotchContentView
+    /// when the outer panel is already expanded — show tabs immediately
+    /// instead of waiting for a second (inner) hover.
+    @State private var isExpanded = true
 
     /// Inline status indicators (COLLAPSED state)
     /// Note: removed @StateObject BatteryMonitor — SwiftUI dealloc crash on macOS 26 / Swift 6.
