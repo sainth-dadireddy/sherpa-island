@@ -227,6 +227,11 @@ struct NotchContentView: View {
         if displayedVisible { return .content }  // "all done" glow
         if mouseMonitor.isHoveringNotch { return .idle }  // hover summon
         if idlePeekActive { return .idle }                // random "peek"
+        // When the user has pinned the pill to always-visible, keep
+        // the buddy in .idle (blinking + breathing) instead of fully
+        // .sleeping — the deep sleep fade made the face read as gone
+        // even though the pill was still on screen.
+        if prefs.alwaysVisible { return .idle }
         return .sleeping
     }
 

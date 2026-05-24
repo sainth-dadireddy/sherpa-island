@@ -468,7 +468,11 @@ final class BuddyPreferences: ObservableObject {
         hapticsEnabled = defaults.object(forKey: Self.hapticsKey) as? Bool ?? true
         speechEnabled = defaults.object(forKey: Self.speechKey) as? Bool ?? true
         suppressPermissionWhenFocused = defaults.object(forKey: Self.suppressPermKey) as? Bool ?? false
-        hideInFullscreen = defaults.object(forKey: Self.hideFullscreenKey) as? Bool ?? true
+        // Default to false so the notch stays visible over a
+        // fullscreen Space out of the box. Users who prefer the old
+        // behavior can flip it back in Settings — the pref still
+        // honors whatever value they explicitly saved.
+        hideInFullscreen = defaults.object(forKey: Self.hideFullscreenKey) as? Bool ?? false
 
         if let storedFraction = defaults.object(forKey: Self.notchAnchorFractionKey) as? Double {
             notchAnchorFraction = CGFloat(storedFraction)
