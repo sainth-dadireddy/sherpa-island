@@ -129,15 +129,16 @@ final class NotchWindow: NSPanel {
         // Use screenSaver level (1000) so the notch floats above any
         // app's full-screen Space. Lower levels (statusBar=25, popUpMenu=101)
         // get clipped behind full-screen windows on macOS Sequoia+.
-        // CGShieldingWindowLevel sits above ALL ordinary windows
-        // including full-screen apps' content. screenSaver (1000) is
-        // sometimes clipped by Sequoia's full-screen compositor; this
-        // raw level guarantees we're on top.
-        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        // .screenSaver (1000) sits above ordinary windows, the menu
+        // bar, and most full-screen compositors. Higher levels like
+        // CGShieldingWindowLevel cause macOS to suppress the window
+        // outright. Lower levels (statusBar, popUpMenu) get clipped
+        // behind some full-screen apps. screenSaver is the sweet spot.
+        self.level = .screenSaver
         self.isMovable = false
         self.ignoresMouseEvents = false
         self.acceptsMouseMovedEvents = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
 
@@ -766,13 +767,14 @@ final class SnapPreviewWindow: NSPanel {
         // Use screenSaver level (1000) so the notch floats above any
         // app's full-screen Space. Lower levels (statusBar=25, popUpMenu=101)
         // get clipped behind full-screen windows on macOS Sequoia+.
-        // CGShieldingWindowLevel sits above ALL ordinary windows
-        // including full-screen apps' content. screenSaver (1000) is
-        // sometimes clipped by Sequoia's full-screen compositor; this
-        // raw level guarantees we're on top.
-        self.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
+        // .screenSaver (1000) sits above ordinary windows, the menu
+        // bar, and most full-screen compositors. Higher levels like
+        // CGShieldingWindowLevel cause macOS to suppress the window
+        // outright. Lower levels (statusBar, popUpMenu) get clipped
+        // behind some full-screen apps. screenSaver is the sweet spot.
+        self.level = .screenSaver
         self.ignoresMouseEvents = true
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
+        self.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
         self.becomesKeyOnlyIfNeeded = true
         self.alphaValue = 0
         host.autoresizingMask = [.width, .height]
