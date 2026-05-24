@@ -36,9 +36,9 @@ final class SocketServer: @unchecked Sendable {
 
     private var serverFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
-    private let acceptQueue = DispatchQueue(label: "notchpilot.socket.accept")
+    private let acceptQueue = DispatchQueue(label: "sherpaisland.socket.accept")
     private let handlerQueue = DispatchQueue(
-        label: "notchpilot.socket.handler",
+        label: "sherpaisland.socket.handler",
         attributes: .concurrent
     )
 

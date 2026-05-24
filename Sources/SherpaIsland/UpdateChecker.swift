@@ -6,7 +6,7 @@ import AppKit
 /// Publishes the result so the UI can show an unobtrusive upgrade badge.
 ///
 /// Supports two upgrade paths:
-/// - **Homebrew**: detects brew on disk → runs `brew upgrade --cask notch-pilot`
+/// - **Homebrew**: detects brew on disk → runs `brew upgrade --cask sherpa-island`
 /// - **Direct download**: downloads the DMG from the GitHub release and opens it
 @MainActor
 final class UpdateChecker: ObservableObject {
@@ -23,7 +23,7 @@ final class UpdateChecker: ObservableObject {
     @Published private(set) var state: UpdateState = .idle
 
     private let owner = "devmegablaster"
-    private let repo = "Notch-Pilot"
+    private let repo = "sherpa-island"
     private var checkTask: Task<Void, Never>?
 
     /// The effective version to compare against. Uses the running app's
@@ -137,7 +137,7 @@ final class UpdateChecker: ObservableObject {
         await runBrewCommand(brewPath, args: ["update"])
 
         // 2. Run the upgrade
-        let success = await runBrewCommand(brewPath, args: ["upgrade", "--cask", "notch-pilot"])
+        let success = await runBrewCommand(brewPath, args: ["upgrade", "--cask", "sherpa-island"])
 
         if success {
             // 3. Verify the installed version actually changed
@@ -146,7 +146,7 @@ final class UpdateChecker: ObservableObject {
             if let latest = latestVersion, isNewer(remote: latest, local: installedVersion) {
                 // Brew said success but version didn't change — try reinstall
                 let reinstalled = await runBrewCommand(brewPath, args: [
-                    "reinstall", "--cask", "notch-pilot"
+                    "reinstall", "--cask", "sherpa-island"
                 ])
                 if !reinstalled {
                     state = .failed("Reinstall failed")
@@ -158,7 +158,7 @@ final class UpdateChecker: ObservableObject {
             let appPath = "/Applications/Sherpa Island.app"
             let pid = ProcessInfo.processInfo.processIdentifier
             let relaunchScript = FileManager.default.temporaryDirectory
-                .appendingPathComponent("notchpilot-relaunch.sh")
+                .appendingPathComponent("sherpaisland-relaunch.sh")
             let scriptContent = """
                 #!/bin/sh
                 while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done
@@ -281,7 +281,7 @@ final class UpdateChecker: ObservableObject {
             // launched via /usr/bin/open as its own process survives.
             let pid = ProcessInfo.processInfo.processIdentifier
             let relaunchScript = FileManager.default.temporaryDirectory
-                .appendingPathComponent("notchpilot-relaunch.sh")
+                .appendingPathComponent("sherpaisland-relaunch.sh")
             let scriptContent = """
                 #!/bin/sh
                 while kill -0 \(pid) 2>/dev/null; do sleep 0.2; done

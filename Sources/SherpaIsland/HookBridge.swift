@@ -49,7 +49,7 @@ final class HookBridge: ObservableObject {
 
     init() {
         socketPath = (NSHomeDirectory() as NSString)
-            .appendingPathComponent(".notch-pilot/pilot.sock")
+            .appendingPathComponent(".sherpa-island/pilot.sock")
         settingsPath = (NSHomeDirectory() as NSString)
             .appendingPathComponent(".claude/settings.json")
         loadAlwaysAllowed()

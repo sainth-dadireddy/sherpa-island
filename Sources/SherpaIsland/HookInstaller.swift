@@ -23,7 +23,7 @@ enum HookInstaller {
 
     static func installIfNeeded() {
         let home = NSHomeDirectory()
-        let installDir = "\(home)/.notch-pilot"
+        let installDir = "\(home)/.sherpa-island"
         let legacyScriptPath = "\(installDir)/hook.js"
         let settingsPath = "\(home)/.claude/settings.json"
 

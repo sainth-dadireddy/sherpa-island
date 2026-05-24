@@ -34,7 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Force the onboarding on every launch when the debug env var
         // is set (useful for iterating on the intro animation without
         // blowing away UserDefaults).
-        let forceIntro = ProcessInfo.processInfo.environment["NOTCH_PILOT_FORCE_ONBOARDING"] != nil
+        let forceIntro = ProcessInfo.processInfo.environment["SHERPA_ISLAND_FORCE_ONBOARDING"] != nil
         let alreadyOnboarded = UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         if forceIntro || !alreadyOnboarded {
             showOnboarding()

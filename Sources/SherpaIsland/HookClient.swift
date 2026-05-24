@@ -13,7 +13,7 @@ import Darwin
 /// with the installed app version.
 enum HookClient {
     private static let socketPath =
-        (NSHomeDirectory() as NSString).appendingPathComponent(".notch-pilot/pilot.sock")
+        (NSHomeDirectory() as NSString).appendingPathComponent(".sherpa-island/pilot.sock")
     /// Upper bound on how long we'll wait for the user to allow/deny a
     /// permission request. Matches the old hook.js value.
     private static let blockingTimeoutSeconds: Int = 120

@@ -367,26 +367,26 @@ final class BuddyPreferences: ObservableObject {
         }
     }
 
-    private static let styleKey = "notchpilot.style"
-    private static let colorKey = "notchpilot.color"
-    private static let voiceKey = "notchpilot.voice"
-    private static let voiceEventsKey = "notchpilot.voice.events"
-    private static let alwaysVisibleKey = "notchpilot.alwaysVisible"
-    private static let startAtLoginKey = "notchpilot.startAtLogin"
-    private static let hapticsKey = "notchpilot.haptics"
-    private static let speechKey = "notchpilot.speech"
-    private static let speechEventsKey = "notchpilot.speech.events"
-    private static let suppressPermKey = "notchpilot.suppressPermissionWhenFocused"
-    private static let hideFullscreenKey = "notchpilot.hideInFullscreen"
-    private static let notchPositionKey = "notchpilot.notchPosition"  // legacy
-    private static let notchAnchorFractionKey = "notchpilot.notchAnchorFraction"
-    private static let notchAnchorYFromTopKey = "notchpilot.notchAnchorYFromTop"
-    private static let pinToTopEdgeKey = "notchpilot.pinToTopEdge"
-    private static let notchScreenIDKey = "notchpilot.notchScreenID"
-    private static let notchLeftSlotKey = "notchpilot.notchLeftSlot"
-    private static let notchCenterSlotKey = "notchpilot.notchCenterSlot"
-    private static let notchRightSlotKey = "notchpilot.notchRightSlot"
-    private static let usageSlotWindowKey = "notchpilot.usageSlotWindow"
+    private static let styleKey = "sherpaisland.style"
+    private static let colorKey = "sherpaisland.color"
+    private static let voiceKey = "sherpaisland.voice"
+    private static let voiceEventsKey = "sherpaisland.voice.events"
+    private static let alwaysVisibleKey = "sherpaisland.alwaysVisible"
+    private static let startAtLoginKey = "sherpaisland.startAtLogin"
+    private static let hapticsKey = "sherpaisland.haptics"
+    private static let speechKey = "sherpaisland.speech"
+    private static let speechEventsKey = "sherpaisland.speech.events"
+    private static let suppressPermKey = "sherpaisland.suppressPermissionWhenFocused"
+    private static let hideFullscreenKey = "sherpaisland.hideInFullscreen"
+    private static let notchPositionKey = "sherpaisland.notchPosition"  // legacy
+    private static let notchAnchorFractionKey = "sherpaisland.notchAnchorFraction"
+    private static let notchAnchorYFromTopKey = "sherpaisland.notchAnchorYFromTop"
+    private static let pinToTopEdgeKey = "sherpaisland.pinToTopEdge"
+    private static let notchScreenIDKey = "sherpaisland.notchScreenID"
+    private static let notchLeftSlotKey = "sherpaisland.notchLeftSlot"
+    private static let notchCenterSlotKey = "sherpaisland.notchCenterSlot"
+    private static let notchRightSlotKey = "sherpaisland.notchRightSlot"
+    private static let usageSlotWindowKey = "sherpaisland.usageSlotWindow"
 
     init() {
         let defaults = UserDefaults.standard

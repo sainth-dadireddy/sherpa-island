@@ -57,7 +57,7 @@ struct SettingsViewV2: View {
                     .foregroundColor(Color(nsColor: .separatorColor))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Off = classic Notch-Pilot UI")
+                    Text("Off = classic layout")
                         .font(.system(.caption, design: .default))
                         .foregroundColor(.secondary)
                     Text("On = tabbed Claude/System/Media organizer")

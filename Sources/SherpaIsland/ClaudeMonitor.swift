@@ -546,7 +546,7 @@ final class ClaudeMonitor: ObservableObject {
             counts[normalized, default: 0] += 1
             lastLiveClaudePIDs[normalized, default: []].append(pid)
         }
-        if ProcessInfo.processInfo.environment["NOTCH_PILOT_DEBUG"] != nil {
+        if ProcessInfo.processInfo.environment["SHERPA_ISLAND_DEBUG"] != nil {
             print("[SherpaIsland] liveClaudeCwdCounts: \(counts)")
         }
         return counts
