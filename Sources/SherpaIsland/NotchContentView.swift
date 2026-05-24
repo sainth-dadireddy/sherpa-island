@@ -538,6 +538,11 @@ struct NotchContentView: View {
             // new activity after the permission was queued.
             hookBridge.dismissStalePermissions(sessions: newSessions)
 
+            // Notify on pinned sessions that have gone idle past the
+            // threshold. Throttled per cwd inside the notifier so we
+            // don't spam every refresh tick.
+            IdleNotifier.shared.evaluate(sessions: newSessions, pinnedCwds: pinnedCwds)
+
             // Build the new set of active session IDs.
             let nowActive = Set(
                 newSessions.filter { !$0.shortStatus.isEmpty }.map(\.id)
