@@ -1,11 +1,75 @@
 #!/bin/bash
 # install.sh — build release + package + install Sherpa Island.app to /Applications
+#
+# Uses a one-time-generated self-signed code signing identity stored in
+# the login keychain so TCC grants (Accessibility, etc.) survive
+# reinstalls. Ad-hoc signing (--sign -) creates a fresh identity per
+# build, silently invalidating every prior grant. The self-signed cert
+# is reused for every install; codesign may prompt "Always Allow" the
+# first time it accesses the private key — click that once.
 set -e
 cd "$(dirname "$0")"
 
 APP_NAME="Sherpa Island.app"
 APP_PATH="/tmp/$APP_NAME"
 DEST="/Applications/$APP_NAME"
+SIGN_IDENTITY="Sherpa Island Local Signer"
+P12_PASS="sherpa-island-local"
+
+ensure_signing_identity() {
+    if /usr/bin/security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_IDENTITY"; then
+        return 0
+    fi
+    echo "=== One-time setup: generating $SIGN_IDENTITY ==="
+    local tmpdir
+    tmpdir=$(mktemp -d)
+    trap 'rm -rf "$tmpdir"' RETURN
+
+    openssl req -new -newkey rsa:2048 -nodes \
+        -keyout "$tmpdir/key.pem" \
+        -out "$tmpdir/csr.pem" \
+        -subj "/CN=$SIGN_IDENTITY" \
+        -days 3650 >/dev/null 2>&1
+
+    cat > "$tmpdir/ext.cnf" <<'EXT'
+[v3]
+basicConstraints=critical,CA:false
+keyUsage=critical,digitalSignature
+extendedKeyUsage=critical,codeSigning
+EXT
+
+    openssl x509 -req -days 3650 \
+        -in "$tmpdir/csr.pem" \
+        -signkey "$tmpdir/key.pem" \
+        -out "$tmpdir/cert.pem" \
+        -extensions v3 -extfile "$tmpdir/ext.cnf" >/dev/null 2>&1
+
+    # Force legacy PBE so macOS `security import` (pre-modern PBES2)
+    # accepts the bundle. -macalg SHA1 + PBE-SHA1-3DES is the magic combo.
+    openssl pkcs12 -export \
+        -inkey "$tmpdir/key.pem" \
+        -in "$tmpdir/cert.pem" \
+        -out "$tmpdir/bundle.p12" \
+        -name "$SIGN_IDENTITY" \
+        -keypbe PBE-SHA1-3DES \
+        -certpbe PBE-SHA1-3DES \
+        -macalg SHA1 \
+        -passout "pass:$P12_PASS" >/dev/null 2>&1
+
+    # -A: grant access to ALL apps without prompting (no per-app ACL hassle).
+    # -T flags also add codesign + security explicitly as a belt-and-suspenders.
+    /usr/bin/security import "$tmpdir/bundle.p12" \
+        -k "$HOME/Library/Keychains/login.keychain-db" \
+        -P "$P12_PASS" \
+        -A \
+        -T /usr/bin/codesign \
+        -T /usr/bin/security >/dev/null
+
+    echo "    ✓ $SIGN_IDENTITY created — reused for all future installs."
+    echo "    ✓ TCC grants (Accessibility, etc.) will persist across reinstalls."
+}
+
+ensure_signing_identity
 
 echo "=== Release build ==="
 swift build -c release
@@ -42,7 +106,9 @@ cat > "$APP_PATH/Contents/Info.plist" << 'PLIST'
 PLIST
 
 echo "=== Codesign + quarantine clear ==="
-codesign --force --deep --sign - "$APP_PATH"
+# First codesign call may prompt "Always Allow" for keychain access.
+# Click that once — it sticks for the lifetime of the keychain entry.
+codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_PATH"
 xattr -dr com.apple.quarantine "$APP_PATH"
 
 echo "=== Install ==="
