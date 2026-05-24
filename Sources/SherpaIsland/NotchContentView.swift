@@ -1830,7 +1830,7 @@ struct NotchContentView: View {
             Text(thermalShort(label))
                 .font(.system(size: 10, weight: .medium, design: .rounded))
                 .foregroundColor(.white.opacity(0.75))
-            Text(String(format: "%.0f°", value))
+            Text(String(format: "%.0f%%", value))
                 .font(.system(size: 10, weight: .semibold, design: .rounded))
                 .foregroundColor(color)
                 .monospacedDigit()
@@ -2744,6 +2744,7 @@ struct NotchContentView: View {
 
             Spacer(minLength: 4)
 
+            headerThermalBadge
             statBadge
             customizeButton
             if updateChecker.updateAvailable {
@@ -4135,6 +4136,32 @@ struct NotchContentView: View {
                 .help(color.label)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Tiny thermometer chip showing the hottest sensor's current
+    /// reading. Hidden until at least one sensor has reported. Same
+    /// color band as the thermal panel chips (green/yellow/red).
+    @ViewBuilder
+    private var headerThermalBadge: some View {
+        if let hottest = temps.sensors.max(by: { $0.value < $1.value })?.value {
+            let color = thermalColor(hottest)
+            HStack(spacing: 4) {
+                Image(systemName: "thermometer.medium")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(color)
+                Text(String(format: "%.0f%%", hottest))
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(color)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(color.opacity(0.14)))
+            .overlay(Capsule().stroke(color.opacity(0.35), lineWidth: 0.5))
+            .help("Thermal load (0-100%) — derived from macOS thermal-pressure label. Real Celsius requires a paid signed helper (CleanMyMac, TG Pro, MFC Pro). Tap to see all sensors.")
+        }
     }
 
     private var statBadge: some View {
