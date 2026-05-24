@@ -640,9 +640,9 @@ final class ClaudeMonitor: ObservableObject {
             .appendingPathComponent("\(session.id).jsonl")
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
 
-        // Read a generous tail — 256KB is enough for 30+ entries on
-        // typical sessions and still cheap.
-        let tail = readTail(url, bytes: 256 * 1024)
+        // Read a generous tail — 1MB covers ~60+ entries on typical
+        // sessions, enough to fill the inline chat-history view.
+        let tail = readTail(url, bytes: 1024 * 1024)
         guard !tail.isEmpty else { return [] }
 
         let lines = tail.split(omittingEmptySubsequences: true, whereSeparator: \.isNewline)

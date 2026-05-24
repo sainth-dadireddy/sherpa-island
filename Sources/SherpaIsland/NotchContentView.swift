@@ -1222,7 +1222,7 @@ struct NotchContentView: View {
 
     @ViewBuilder
     private func sessionDetailTimeline(_ s: ClaudeSession) -> some View {
-        let events = monitor.recentEvents(for: s, limit: 30)
+        let events = monitor.recentEvents(for: s, limit: 60)
         if events.isEmpty {
             VStack(spacing: 6) {
                 Image(systemName: "tray")
@@ -1272,7 +1272,9 @@ struct NotchContentView: View {
                                 ? .monospaced : .default
                         ))
                         .foregroundColor(.white.opacity(0.78))
-                        .lineLimit(4)
+                        .lineLimit(20)
+                        .truncationMode(.tail)
+                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
