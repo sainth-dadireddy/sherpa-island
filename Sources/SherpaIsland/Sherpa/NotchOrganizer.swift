@@ -29,17 +29,22 @@ enum WidgetTab: String, CaseIterable, Identifiable {
 
 // MARK: - NotchOrganizer
 
-@MainActor
 struct NotchOrganizer: View {
-    @StateObject var autoMode: AutoModeSwitcher
+    @ObservedObject var autoMode: AutoModeSwitcher
     @State var selectedTab: WidgetTab = .claude
 
     /// Track collapsed/expanded state
     @State private var isExpanded = false
 
     /// Inline status indicators (COLLAPSED state)
-    @StateObject private var batteryMonitor = BatteryMonitor()
-    // AudioMonitor deferred — use NowPlayingMonitor placeholder
+    /// Note: removed @StateObject BatteryMonitor — SwiftUI dealloc crash on macOS 26 / Swift 6.
+    /// v0.3 will use @EnvironmentObject pattern to share monitors safely.
+    /// Stub for now to keep code compiling:
+    private var batteryMonitor: BatteryStub { BatteryStub() }
+    private struct BatteryStub {
+        var percentage: Int = 85
+        var isOnAC: Bool = true
+    }
 
     /// Keyboard shortcut to toggle settings sheet
     @State private var showingSettings = false
