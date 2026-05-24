@@ -3540,8 +3540,8 @@ struct NotchContentView: View {
                 HStack(spacing: 6) {
                     if !s.model.isEmpty {
                         Text(compactModelName(s.model))
-                            .font(.system(size: 9, design: .rounded))
-                            .foregroundColor(.white.opacity(0.45))
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundColor(modelColor(s.model))
                         Circle()
                             .fill(Color.white.opacity(0.2))
                             .frame(width: 2, height: 2)
@@ -3629,6 +3629,17 @@ struct NotchContentView: View {
     }
 
     /// Shortens model strings like "claude-opus-4-6" → "opus 4.6".
+    /// Brand color for a model family — Opus purple, Sonnet blue,
+    /// Haiku teal. Used to color-code session rows so users juggling
+    /// multiple sessions can distinguish them at a glance.
+    private func modelColor(_ raw: String) -> Color {
+        let lower = raw.lowercased()
+        if lower.contains("opus")   { return Color(red: 0.62, green: 0.45, blue: 0.92) }
+        if lower.contains("sonnet") { return Color(red: 0.40, green: 0.65, blue: 0.95) }
+        if lower.contains("haiku")  { return Color(red: 0.35, green: 0.78, blue: 0.72) }
+        return .white.opacity(0.55)
+    }
+
     private func compactModelName(_ raw: String) -> String {
         let lower = raw.lowercased()
         let family: String = {
