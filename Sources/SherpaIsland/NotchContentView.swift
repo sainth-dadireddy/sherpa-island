@@ -3709,6 +3709,15 @@ struct NotchContentView: View {
                         .font(.system(size: 9, design: .rounded))
                         .foregroundColor(.white.opacity(0.4))
                 }
+
+                if !s.lastMessage.isEmpty {
+                    Text(s.lastMessage)
+                        .font(.system(size: 10, design: .rounded))
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(s.lastMessage)
+                }
             }
 
             modeBadge(hookBridge.liveModes[s.cwd] ?? s.nativeMode)
