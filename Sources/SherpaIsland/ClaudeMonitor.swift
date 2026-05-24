@@ -56,7 +56,11 @@ final class ClaudeMonitor: ObservableObject {
     // Sessions whose jsonl hasn't been touched in this long are hidden from
     // the list entirely — Claude Code never deletes its session files, so
     // without this filter we'd show months of historical projects.
-    private let shownThreshold: TimeInterval = 15 * 60
+    // Surface sessions whose jsonl has been touched in the last hour.
+    // The cwd-count gate against live claude PIDs is the real liveness
+    // filter, so the wider mtime window lets idle-but-still-running
+    // sessions remain visible until they're truly stale.
+    private let shownThreshold: TimeInterval = 60 * 60
 
     // mtime-keyed parse cache. When a jsonl's mtime hasn't changed since
     // the last poll we reuse the cached parse instead of re-reading.

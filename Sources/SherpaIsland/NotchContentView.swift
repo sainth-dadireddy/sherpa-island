@@ -3615,6 +3615,73 @@ struct NotchContentView: View {
             Button(isPinned(s.cwd) ? "Unpin from top" : "Pin to top") {
                 togglePin(s.cwd)
             }
+            Divider()
+            let currentMode = currentPermissionMode(at: s.cwd)
+            Menu("Permission mode (next launch)") {
+                Button(modeMenuLabel("Default — prompt each tool",
+                                     selected: currentMode == "default")) {
+                    writePermissionMode("default", at: s.cwd)
+                }
+                Button(modeMenuLabel("Accept edits — auto-approve Edit/Write",
+                                     selected: currentMode == "acceptEdits")) {
+                    writePermissionMode("acceptEdits", at: s.cwd)
+                }
+                Button(modeMenuLabel("Plan — read-only planning",
+                                     selected: currentMode == "plan")) {
+                    writePermissionMode("plan", at: s.cwd)
+                }
+                Button(modeMenuLabel("Bypass — yolo, allow everything",
+                                     selected: currentMode == "bypassPermissions")) {
+                    writePermissionMode("bypassPermissions", at: s.cwd)
+                }
+            }
+            .help("Writes to <cwd>/.claude/settings.local.json. Running claude session keeps its current mode until you restart it in that terminal (Ctrl+C then `claude`).")
+            Divider()
+            Button("Copy cwd") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(s.cwd, forType: .string)
+            }
+            Button("Reveal in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: s.cwd)])
+            }
+        }
+    }
+
+
+    /// Reads `permissionMode` out of `<cwd>/.claude/settings.local.json`
+    /// if present. Returns "default" otherwise so the menu always has a
+    /// concrete selection to check-mark.
+    private func currentPermissionMode(at cwd: String) -> String {
+        guard !cwd.isEmpty else { return "default" }
+        let url = URL(fileURLWithPath: cwd)
+            .appendingPathComponent(".claude/settings.local.json")
+        guard let data = try? Data(contentsOf: url),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let mode = obj["permissionMode"] as? String
+        else { return "default" }
+        return mode
+    }
+
+    private func modeMenuLabel(_ title: String, selected: Bool) -> String {
+        selected ? "✓ \(title)" : "   \(title)"
+    }
+
+    /// Writes `permissionMode` into `<cwd>/.claude/settings.local.json`,
+    /// preserving any other keys already there. Claude Code picks this
+    /// up on its next launch in that directory.
+    private func writePermissionMode(_ mode: String, at cwd: String) {
+        guard !cwd.isEmpty else { return }
+        let dir = URL(fileURLWithPath: cwd).appendingPathComponent(".claude", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("settings.local.json")
+        var dict: [String: Any] = [:]
+        if let data = try? Data(contentsOf: url),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            dict = obj
+        }
+        dict["permissionMode"] = mode
+        if let out = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]) {
+            try? out.write(to: url)
         }
     }
 
