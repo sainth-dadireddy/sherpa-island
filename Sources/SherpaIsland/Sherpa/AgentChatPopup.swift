@@ -14,7 +14,7 @@ fileprivate let chatTextHi     = Color(red: 0.95,  green: 0.96,  blue: 0.98)
 fileprivate let chatTextMid    = Color(red: 0.72,  green: 0.75,  blue: 0.80)
 fileprivate let chatTextLow    = Color(red: 0.55,  green: 0.58,  blue: 0.64)
 
-fileprivate let knownAgents = ["sai", "claude", "codex", "agy", "jules"]
+fileprivate let knownAgents = ["sai", "claude", "codex", "agy", "ollama", "jules"]
 
 // MARK: - Per-agent color
 
@@ -24,6 +24,7 @@ fileprivate func agentColor(_ name: String) -> Color {
     case "claude":  return Color(red: 0.85, green: 0.50, blue: 0.30)   // claude orange
     case "codex":   return Color(red: 0.30, green: 0.75, blue: 0.55)   // openai green
     case "agy":     return Color(red: 0.45, green: 0.65, blue: 0.95)   // google blue
+    case "ollama":  return Color(red: 0.55, green: 0.40, blue: 0.85)   // local purple
     case "jules":   return Color(red: 0.95, green: 0.75, blue: 0.30)   // google yellow
     default:        return chatAccent
     }
@@ -40,6 +41,7 @@ fileprivate let agentModel: [String: String] = [
     "claude": "opus-4.7",
     "codex":  "gpt-5.x",
     "agy":    "gemini-3-pro",
+    "ollama": "qwen2.5-coder:14b",
     "jules":  "gemini-async",
     "system": "—"
 ]
@@ -154,7 +156,9 @@ final class ChatStore: ObservableObject {
     @Published var pollError: String?
 
     @Published var selection: ConvSelection = .none
-    @Published var me: String = "sai"
+    @Published var me: String = UserDefaults.standard.string(forKey: "AgentChat.me") ?? "sai" {
+        didSet { UserDefaults.standard.set(me, forKey: "AgentChat.me") }
+    }
     @Published var filter: FilterMode = .all
 
     private let dbPath = NSHomeDirectory() + "/.claude/memory/agent_chat.db"
@@ -241,6 +245,35 @@ final class ChatStore: ObservableObject {
         sqlite3_bind_text(stmt, 7, description, -1, SQLITE_TRANSIENT)
         guard sqlite3_step(stmt) == SQLITE_DONE else { return nil }
         return id
+    }
+
+    // MARK: - Member management
+
+    func updateRoomMembers(_ roomId: String, members: [String]) -> Bool {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return false }
+        defer { sqlite3_close(db) }
+        let membersJSON = (try? String(data: JSONSerialization.data(withJSONObject: members), encoding: .utf8)) ?? "[]"
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "UPDATE rooms SET members = ? WHERE id = ?", -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_text(stmt, 1, membersJSON, -1, SQLITE_TRANSIENT)
+        sqlite3_bind_text(stmt, 2, roomId, -1, SQLITE_TRANSIENT)
+        let ok = sqlite3_step(stmt) == SQLITE_DONE
+        if ok { load() }
+        return ok
+    }
+
+    func addMemberToRoom(_ roomId: String, agent: String) -> Bool {
+        guard let room = rooms.first(where: { $0.id == roomId }) else { return false }
+        if room.members.contains(agent) { return true }   // already a member
+        return updateRoomMembers(roomId, members: room.members + [agent])
+    }
+
+    func removeMemberFromRoom(_ roomId: String, agent: String) -> Bool {
+        guard let room = rooms.first(where: { $0.id == roomId }) else { return false }
+        return updateRoomMembers(roomId, members: room.members.filter { $0 != agent })
     }
 
     func createTicket(title: String, description: String, owner: String?, priority: String, category: String) -> String? {
@@ -439,11 +472,12 @@ final class ChatStore: ObservableObject {
     private func loadRooms(db: OpaquePointer?) {
         var stmt: OpaquePointer?
         var result: [ChatRoom] = []
-        // Exclude dm:* and team:all auto-rooms — they surface under DMs and broadcast sections instead.
+        // Exclude only dm:* auto-rooms — they surface in the DMs section.
+        // team:all stays visible (broadcast room).
         let sql = """
             SELECT id, name, category, ticket_id, members, created_by, created_at, description
             FROM rooms
-            WHERE name NOT LIKE 'dm:%' AND name != 'team:all'
+            WHERE name NOT LIKE 'dm:%'
             ORDER BY created_at DESC LIMIT 50
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -1252,7 +1286,43 @@ struct AgentChatPopupView: View {
                                         Spacer()
                                         Circle().fill(store.onlineAgents.contains(m) ? .green : chatTextLow.opacity(0.3))
                                             .frame(width: 5, height: 5)
+                                        // Remove button — visible on hover, not for the current user themselves
+                                        if m != store.me {
+                                            Button {
+                                                _ = store.removeMemberFromRoom(rid, agent: m)
+                                            } label: {
+                                                Image(systemName: "minus.circle.fill")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(chatTextLow.opacity(0.6))
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("Remove \(m) from room")
+                                        }
                                     }
+                                }
+                                // Add-member row: dropdown of non-member known agents
+                                let candidates = knownAgents.filter { !room.members.contains($0) }
+                                if !candidates.isEmpty {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "plus.circle")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(chatAccent)
+                                        Menu {
+                                            ForEach(candidates, id: \.self) { a in
+                                                Button(a) {
+                                                    _ = store.addMemberToRoom(rid, agent: a)
+                                                }
+                                            }
+                                        } label: {
+                                            Text("Add member")
+                                                .font(.system(size: 11))
+                                                .foregroundColor(chatAccent)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .menuStyle(.borderlessButton)
+                                        Spacer()
+                                    }
+                                    .padding(.top, 4)
                                 }
                             }
                         }
