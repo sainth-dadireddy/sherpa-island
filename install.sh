@@ -22,6 +22,7 @@ rm -rf "$APP_PATH"
 mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
 cp .build/arm64-apple-macosx/release/SherpaIsland "$APP_PATH/Contents/MacOS/SherpaIsland"
 cp Resources/icon-1024.png "$APP_PATH/Contents/Resources/AppIcon.png" 2>/dev/null || true
+cp Resources/erpa-mascot.png "$APP_PATH/Contents/Resources/erpa-mascot.png" 2>/dev/null || true
 
 cat > "$APP_PATH/Contents/Info.plist" << 'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

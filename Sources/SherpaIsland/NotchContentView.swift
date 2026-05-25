@@ -1017,6 +1017,8 @@ struct NotchContentView: View {
                         .padding(.top, 4)
                     expenseDashboardButton
                         .padding(.horizontal, 4)
+                    agentChatDashboardButton
+                        .padding(.horizontal, 4)
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
@@ -3870,6 +3872,59 @@ struct NotchContentView: View {
     /// context menus). Dim until hovered, then reddish.
     @State private var tempoHovered = false
     @State private var expenseHovered = false
+    @State private var chatHovered = false
+    private var chatBrandPrimary: Color { Color(red: 0.51, green: 0.31, blue: 0.85) }
+    private var chatBrandAccent:  Color { Color(red: 0.69, green: 0.51, blue: 1.00) }
+    private var agentChatDashboardButton: some View {
+        Button {
+            AgentChatPopupWindowController.shared.show()
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [chatBrandAccent, chatBrandPrimary],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Agent Chat")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("claude · codex · agy · jules")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(chatHovered ? 0.8 : 0.35))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: chatHovered
+                            ? [chatBrandPrimary.opacity(0.55), chatBrandAccent.opacity(0.35)]
+                            : [chatBrandPrimary.opacity(0.25), chatBrandAccent.opacity(0.10)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(chatBrandAccent.opacity(chatHovered ? 0.55 : 0.22), lineWidth: 0.75)
+            )
+            .shadow(color: chatBrandPrimary.opacity(chatHovered ? 0.35 : 0.12),
+                    radius: chatHovered ? 8 : 3, x: 0, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .onHover { chatHovered = $0 }
+        .animation(.easeOut(duration: 0.18), value: chatHovered)
+        .help("Cross-CLI agent chat (Claude / Codex / Agy / Jules)")
+    }
     // Tempo brand: #1B4FBF deep blue → cyan accent
     private var tempoBrandBlue: Color { Color(red: 0.106, green: 0.310, blue: 0.749) }
     private var tempoBrandCyan: Color { Color(red: 0.25,  green: 0.55,  blue: 0.95) }
