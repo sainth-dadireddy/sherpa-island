@@ -791,7 +791,7 @@ struct NotchContentView: View {
             Spacer(minLength: 0)
         }
         .frame(width: w, height: h, alignment: .top)
-        .background(shape.fill(Color.black))
+        .background(shape.fill(Color(red: 0.165, green: 0.192, blue: 0.255)))
         .contentShape(shape)
         .contextMenu {
             Button("Quit Sherpa Island") { NSApp.terminate(nil) }
@@ -950,7 +950,7 @@ struct NotchContentView: View {
         .frame(width: collapsedWidth, height: pillHeight, alignment: .topLeading)
         .background(
             ZStack {
-                shape.fill(Color.black)
+                shape.fill(Color(red: 0.165, green: 0.192, blue: 0.255))
                 if showPermissionAlert {
                     shape.inset(by: -1.5)
                         .stroke(permissionAlertColor.base.opacity(0.7), lineWidth: 2)
@@ -959,6 +959,14 @@ struct NotchContentView: View {
             .animation(.easeInOut(duration: 0.5), value: showPermissionAlert)
         )
         .contentShape(shape)
+        .onDrop(of: [UTType.fileURL], isTargeted: $isCollapsedDropTargeted) { _ in
+            // Files are forwarded to expanded panel's onDrop; we just expand here.
+            expanded = true
+            return false
+        }
+        .onChange(of: isCollapsedDropTargeted) { _, hovering in
+            if hovering { expanded = true }
+        }
         .onHover { hovering in
             if hovering {
                 // Cancel any pending collapse — the user came back before
@@ -1004,6 +1012,11 @@ struct NotchContentView: View {
                     sessionsSection
                     heatmapSection
                     thermalSection
+                    tempoDashboardButton
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
+                    expenseDashboardButton
+                        .padding(.horizontal, 4)
                 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, 18)
@@ -1076,7 +1089,7 @@ struct NotchContentView: View {
                 dropPulseOn = hovering
             }
         }
-        .background(shape.fill(Color.black))
+        .background(shape.fill(Color(red: 0.165, green: 0.192, blue: 0.255)))
         .overlay(alignment: .top) {
             if showingAppearancePicker {
                 appearancePickerOverlay
@@ -3136,6 +3149,7 @@ struct NotchContentView: View {
 
     /// Drag-drop UI state for the file-path drop receiver.
     @State private var isFileDropTargeted = false
+    @State private var isCollapsedDropTargeted = false
     @State private var fileDropToast: String? = nil
     /// Toggles every 0.9s while a drag is hovering — drives the
     /// breathing glow and label scale on the drop-target overlay.
@@ -3854,6 +3868,122 @@ struct NotchContentView: View {
     /// keep Sherpa Island's surface area limited to the notch itself, so
     /// this is now the only discoverable quit path (besides right-click
     /// context menus). Dim until hovered, then reddish.
+    @State private var tempoHovered = false
+    @State private var expenseHovered = false
+    // Tempo brand: #1B4FBF deep blue → cyan accent
+    private var tempoBrandBlue: Color { Color(red: 0.106, green: 0.310, blue: 0.749) }
+    private var tempoBrandCyan: Color { Color(red: 0.25,  green: 0.55,  blue: 0.95) }
+    private var wdOrangeBrand: Color { Color(red: 1.00, green: 0.45, blue: 0.20) }
+    private var wdNavyBrand: Color   { Color(red: 0.12, green: 0.27, blue: 0.50) }
+    private var expenseDashboardButton: some View {
+        Button {
+            ExpensePopupWindowController.shared.show()
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [wdOrangeBrand, wdNavyBrand],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "doc.text.image.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Expense")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("OCR receipt → Workday draft")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(expenseHovered ? 0.8 : 0.35))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: expenseHovered
+                            ? [wdOrangeBrand.opacity(0.55), wdNavyBrand.opacity(0.35)]
+                            : [wdOrangeBrand.opacity(0.25), wdNavyBrand.opacity(0.15)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(wdOrangeBrand.opacity(expenseHovered ? 0.55 : 0.22), lineWidth: 0.75)
+            )
+            .shadow(color: wdOrangeBrand.opacity(expenseHovered ? 0.30 : 0.10),
+                    radius: expenseHovered ? 8 : 3, x: 0, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .onHover { expenseHovered = $0 }
+        .animation(.easeOut(duration: 0.18), value: expenseHovered)
+        .help("OCR a receipt + open Workday expense form")
+    }
+
+    private var tempoDashboardButton: some View {
+        Button {
+            TempoPopupWindowController.shared.show()
+        } label: {
+            HStack(spacing: 10) {
+                // Tempo brand mark: stylized hourglass icon in white-on-blue circle
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [tempoBrandCyan, tempoBrandBlue],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 26, height: 26)
+                    Image(systemName: "hourglass.bottomhalf.filled")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Tempo")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                    Text("Fill worklogs")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(tempoHovered ? 0.8 : 0.35))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: tempoHovered
+                            ? [tempoBrandBlue.opacity(0.55), tempoBrandBlue.opacity(0.30)]
+                            : [tempoBrandBlue.opacity(0.28), tempoBrandBlue.opacity(0.12)],
+                        startPoint: .topLeading, endPoint: .bottomTrailing
+                    ))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(tempoBrandCyan.opacity(tempoHovered ? 0.55 : 0.22), lineWidth: 0.75)
+            )
+            .shadow(color: tempoBrandBlue.opacity(tempoHovered ? 0.35 : 0.12),
+                    radius: tempoHovered ? 8 : 3, x: 0, y: 2)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain)
+        .onHover { tempoHovered = $0 }
+        .animation(.easeOut(duration: 0.18), value: tempoHovered)
+        .help("Open Tempo worklog filler")
+    }
+
     @State private var quitHovered = false
     private var quitButton: some View {
         Button {

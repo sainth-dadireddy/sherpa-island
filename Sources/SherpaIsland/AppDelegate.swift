@@ -126,11 +126,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(withTitle: "Sherpa Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        menu.addItem(withTitle: "Tempo Worklog…", action: #selector(openTempo), keyEquivalent: "t").target = self
         menu.addItem(NSMenuItem.separator())
         menu.addItem(withTitle: "Quit Sherpa Island", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q")
 
         item.menu = menu
         self.statusItem = item
+    }
+
+    @objc private func openTempo() {
+        TempoPopupWindowController.shared.show()
     }
 
     @objc private func openSettings() {
