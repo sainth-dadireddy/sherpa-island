@@ -284,3 +284,148 @@ private struct WorkerCardView: View {
         }
     }
 }
+
+
+// MARK: - AgentDetailPane (single agent view, opened in main pane)
+
+struct AgentDetailPane: View {
+    let agentName: String
+    @State private var selectedLLM: String = ""
+
+    private var card: WorkerCardData? {
+        allWorkerCards().first(where: { $0.name == agentName })
+    }
+
+    var body: some View {
+        if let card = card {
+            let c = card.category.color
+            let catColor = Color(red: c.red, green: c.green, blue: c.blue)
+            let activeLLM = selectedLLM.isEmpty
+                ? WorkerLLMSelection.get(card.id, default: card.defaultLLM)
+                : selectedLLM
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            Circle().fill(catColor.opacity(0.25))
+                            Text(String(card.displayName.prefix(1)))
+                                .font(.system(size: 22, weight: .bold, design: .rounded))
+                                .foregroundColor(catColor)
+                        }
+                        .frame(width: 56, height: 56)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) {
+                                Text(card.displayName)
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundColor(.primary)
+                                if card.isCLI {
+                                    Text("CLI")
+                                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                        .background(Capsule().fill(catColor.opacity(0.3)))
+                                        .foregroundColor(catColor)
+                                }
+                            }
+                            HStack(spacing: 4) {
+                                Text(card.category.emoji)
+                                    .font(.system(size: 11))
+                                Text(card.category.label)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(catColor)
+                            }
+                        }
+                        Spacer()
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("ABOUT")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .tracking(0.6)
+                        Text(card.description)
+                            .font(.system(size: 13))
+                            .foregroundColor(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("LLM MODEL")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .tracking(0.6)
+                        Picker("", selection: Binding(
+                            get: { activeLLM },
+                            set: { newVal in
+                                selectedLLM = newVal
+                                WorkerLLMSelection.set(card.id, model: newVal)
+                            })
+                        ) {
+                            ForEach(card.llmOptions, id: \.self) { opt in
+                                Text(opt).tag(opt)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+
+                        HStack(spacing: 6) {
+                            Text("Price:")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                            Text(priceLabel(for: activeLLM))
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(.primary)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("RANKED OPTIONS")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .tracking(0.6)
+                        ForEach(Array(card.llmOptions.enumerated()), id: \.offset) { idx, opt in
+                            HStack {
+                                Text("#\(idx + 1)")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundColor(catColor)
+                                    .frame(width: 24, alignment: .leading)
+                                Text(opt)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundColor(.primary)
+                                Spacer()
+                                Text(priceLabel(for: opt))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(opt == activeLLM ? catColor.opacity(0.12) : Color.clear)
+                            )
+                        }
+                    }
+
+                    Spacer()
+                }
+                .padding(20)
+                .frame(maxWidth: 640, alignment: .leading)
+            }
+            .onAppear {
+                if selectedLLM.isEmpty {
+                    selectedLLM = WorkerLLMSelection.get(card.id, default: card.defaultLLM)
+                }
+            }
+        } else {
+            VStack {
+                Text("Unknown agent: \(agentName)")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(20)
+        }
+    }
+}

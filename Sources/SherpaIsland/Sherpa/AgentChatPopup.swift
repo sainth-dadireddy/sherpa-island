@@ -1167,7 +1167,7 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count, onTap: { showWorkersBoard = true }) {
+                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count) {
                     VStack(alignment: .leading, spacing: 1) {
                         if store.workers.isEmpty {
                             Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
@@ -1278,23 +1278,16 @@ struct AgentChatPopupView: View {
 
     private var mainPane: some View {
         VStack(spacing: 0) {
-            if showWorkersBoard {
-                WorkersBoardView()
+            conversationHeader
+            Divider().background(chatPrimary.opacity(0.15))
+            if store.selection == .kanban {
+                kanbanBoard
+            } else if case .agent(let name) = store.selection {
+                AgentDetailPane(agentName: name)
             } else {
-                conversationHeader
-                Divider().background(chatPrimary.opacity(0.15))
-                if store.selection == .kanban {
-                    kanbanBoard
-                } else if case .agent = store.selection {
-                    VStack {
-                        Text("Agent detail view").font(.system(size: 12)).foregroundColor(chatTextLow)
-                        Spacer()
-                    }
-                } else {
-                    messageFeed
-                    Divider().background(chatPrimary.opacity(0.25))
-                    composer
-                }
+                messageFeed
+                Divider().background(chatPrimary.opacity(0.25))
+                composer
             }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
