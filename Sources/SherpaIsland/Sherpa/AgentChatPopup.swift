@@ -146,6 +146,7 @@ struct AgentRow: Identifiable, Hashable {
     var id: String { name }
 }
 
+
 enum ConvSelection: Hashable {
     case none
     case dm(String, String)   // canonical sorted pair
@@ -240,7 +241,8 @@ final class ChatStore: ObservableObject {
                 roomId = newId
             }
         case .agent:
-                Text("Agent detail").foregroundColor(chatTextLow)
+                HStack { Text("Agent").foregroundColor(chatTextLow); Spacer() }
+                    .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
             case .kanban:
             // Composer in kanban view broadcasts to team:all (board-wide announcement)
             to = "@all"
@@ -526,8 +528,8 @@ final class ChatStore: ObservableObject {
 
         loadDMPairs(db: db)
         loadRooms(db: db)
-        loadAgents(db: db)
         loadTickets(db: db)
+        loadAgents(db: db)
         loadOnline(db: db)
         loadMessages(db: db)
         loadUnreadCounts(db: db)
@@ -562,7 +564,8 @@ final class ChatStore: ObservableObject {
 
     private func loadDMPairs(db: OpaquePointer?) {
         var stmt: OpaquePointer?
-        var pairsByOther: [String: DMPair] = [:]
+        var pairs = Set<String>()
+        var result: [DMPair] = []
         let sql = "SELECT DISTINCT from_agent, to_agent FROM messages WHERE (room_id IS NULL OR room_id='') AND (ticket_id IS NULL OR ticket_id='')"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -570,20 +573,26 @@ final class ChatStore: ObservableObject {
                 let tRaw = String(cString: sqlite3_column_text(stmt, 1))
                 let f = fRaw.lowercased()
                 let t = tRaw.lowercased()
+                // Filter out non-DM rows masquerading as DMs
                 if t.isEmpty || f.isEmpty { continue }
                 if t == "room" || t == "ticket" || t == "@all" || t == "all" { continue }
-                if f == t { continue }
+                if f == t { continue }  // self-DM noise
                 let p = canonicalPair(f, t)
-                let other = p.0 == me ? p.1 : p.0
-                pairsByOther[other] = DMPair(a: p.0, b: p.1)
+                let key = "\(p.0)|\(p.1)"
+                if pairs.insert(key).inserted {
+                    result.append(DMPair(a: p.0, b: p.1))
+                }
             }
         }
         sqlite3_finalize(stmt)
+        // Ensure built-in pairs exist for "me" so user can start a DM with no history
         for other in knownAgents where other != me {
             let p = canonicalPair(me, other)
-            pairsByOther[other, default: DMPair(a: p.0, b: p.1)] = DMPair(a: p.0, b: p.1)
+            let key = "\(p.0)|\(p.1)"
+            if pairs.insert(key).inserted {
+                result.append(DMPair(a: p.0, b: p.1))
+            }
         }
-        var result = Array(pairsByOther.values)
         result.sort { "\($0.a)\($0.b)" < "\($1.a)\($1.b)" }
         if result != dmPairs { dmPairs = result }
     }
@@ -676,12 +685,13 @@ final class ChatStore: ObservableObject {
     private func loadRooms(db: OpaquePointer?) {
         var stmt: OpaquePointer?
         var result: [ChatRoom] = []
-        // Exclude only dm:* auto-rooms — they surface in the DMs section.
-        // team:all stays visible (broadcast room).
+        // Exclude dm:* auto-rooms and group rooms.
         let sql = """
             SELECT id, name, category, ticket_id, members, created_by, created_at, description
             FROM rooms
-            WHERE name NOT LIKE 'dm:%' AND ticket_id IS NULL
+            WHERE name NOT LIKE 'dm:%'
+              AND (name NOT LIKE 'team:%' AND name NOT LIKE 'ticket:%')
+              AND category != 'group'
             ORDER BY created_at DESC LIMIT 50
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -720,15 +730,15 @@ final class ChatStore: ObservableObject {
                 let ua = sqlite3_column_type(stmt, 9) == SQLITE_NULL ? "" : String(cString: sqlite3_column_text(stmt, 9))
                 let due: String? = sqlite3_column_type(stmt, 10) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 10))
                 let parent: String? = sqlite3_column_type(stmt, 11) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 11))
-                let cost: Double? = sqlite3_column_type(stmt, 12) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 12))
-                let ceiling: Double? = sqlite3_column_type(stmt, 13) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 13))
+                let costUsd: Double? = sqlite3_column_type(stmt, 12) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 12))
+                let costCeiling: Double? = sqlite3_column_type(stmt, 13) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 13))
                 let artifact: String? = sqlite3_column_type(stmt, 14) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 14))
-                let closed: String? = sqlite3_column_type(stmt, 15) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 15))
+                let closedAt: String? = sqlite3_column_type(stmt, 15) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 15))
                 let repo: String? = sqlite3_column_type(stmt, 16) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 16))
                 let branch: String? = sqlite3_column_type(stmt, 17) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 17))
                 let prUrl: String? = sqlite3_column_type(stmt, 18) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 18))
                 let prState: String? = sqlite3_column_type(stmt, 19) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 19))
-                result.append(ChatTicket(id: id, title: title, description: desc, category: cat, ownerAgent: owner, status: status, priority: prio, createdBy: by, createdAt: ca, updatedAt: ua, dueAt: due, parentTicket: parent, costUsd: cost, costCeilingUsd: ceiling, artifact: artifact, closedAt: closed, repo: repo, branch: branch, prUrl: prUrl, prState: prState))
+                result.append(ChatTicket(id: id, title: title, description: desc, category: cat, ownerAgent: owner, status: status, priority: prio, createdBy: by, createdAt: ca, updatedAt: ua, dueAt: due, parentTicket: parent, costUsd: costUsd, costCeilingUsd: costCeiling, artifact: artifact, closedAt: closedAt, repo: repo, branch: branch, prUrl: prUrl, prState: prState))
             }
         }
         sqlite3_finalize(stmt)
@@ -739,8 +749,10 @@ final class ChatStore: ObservableObject {
         var stmt: OpaquePointer?
         var result: [AgentRow] = []
         let sql = "SELECT name, display_name, role_lane, model_id, provider FROM agents WHERE enabled=1 ORDER BY name"
+        var usesFallback = true
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
+                usesFallback = false
                 let name = String(cString: sqlite3_column_text(stmt, 0))
                 let displayName = sqlite3_column_type(stmt, 1) == SQLITE_NULL ? name : String(cString: sqlite3_column_text(stmt, 1))
                 let roleLane: String? = sqlite3_column_type(stmt, 2) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 2))
@@ -750,14 +762,16 @@ final class ChatStore: ObservableObject {
             }
         }
         sqlite3_finalize(stmt)
-        if result.isEmpty {
+        
+        if usesFallback || result.isEmpty {
             result = [
-                AgentRow(name: "pm", displayName: "Project Manager", roleLane: nil, modelId: "claude-haiku-4.5", provider: "Anthropic"),
-                AgentRow(name: "eng", displayName: "Engineer", roleLane: nil, modelId: "qwen3-coder", provider: "Alibaba"),
-                AgentRow(name: "reviewer", displayName: "Reviewer", roleLane: nil, modelId: "deepseek-r1", provider: "DeepSeek"),
-                AgentRow(name: "qa", displayName: "QA", roleLane: nil, modelId: "claude-haiku-4.5", provider: "Anthropic")
+                AgentRow(name: "pm", displayName: "Project Manager", roleLane: "pm", modelId: "claude-haiku-4.5", provider: "anthropic"),
+                AgentRow(name: "eng", displayName: "Engineer", roleLane: "eng", modelId: "qwen3-coder", provider: "alibaba"),
+                AgentRow(name: "reviewer", displayName: "Reviewer", roleLane: "review", modelId: "deepseek-r1", provider: "deepseek"),
+                AgentRow(name: "qa", displayName: "QA", roleLane: "qa", modelId: "claude-haiku-4.5", provider: "anthropic")
             ]
         }
+        
         if result != workers { workers = result }
     }
 
@@ -796,8 +810,9 @@ final class ChatStore: ObservableObject {
             sql += " AND ticket_id=?"
             binds.append((1, tid))
         case .agent:
-                Text("Agent detail").foregroundColor(chatTextLow)
-            case .kanban:
+            // No message feed for agent detail
+            sql += " AND 1=0"
+        case .kanban:
             // No message feed in kanban — the main pane shows the board grid instead
             sql += " AND 1=0"
         }
@@ -888,10 +903,6 @@ fileprivate func groupMessages(_ msgs: [ChatMessage]) -> [MessageGroup] {
 
 struct AgentChatPopupView: View {
     @StateObject private var store = ChatStore()
-    @State private var dmCollapsed: Bool = false
-    @State private var roomsCollapsed: Bool = false
-    @State private var workersCollapsed: Bool = false
-
     @State private var composeText: String = ""
     @State private var kanbanTypeFilter: String = "all"
     @State private var bdSyncResult: String? = nil
@@ -899,6 +910,9 @@ struct AgentChatPopupView: View {
     @State private var showNewConvSheet: Bool = false
     @State private var showMentionPopover: Bool = false
     @State private var mentionPrefix: String = ""
+    @AppStorage("sidebar.collapsed.dm") private var dmCollapsed: Bool = false
+    @AppStorage("sidebar.collapsed.rooms") private var roomsCollapsed: Bool = false
+    @AppStorage("sidebar.collapsed.workers") private var workersCollapsed: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1006,7 +1020,7 @@ struct AgentChatPopupView: View {
     private var leftSidebar: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                sidebarSection(title: "Direct Messages", icon: "bubble.left", isCollapsed: $dmCollapsed) {
+                sidebarSection(title: "Direct Messages", icon: "bubble.left", isCollapsed: $dmCollapsed, count: store.dmPairs.count) {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(store.dmPairs) { pair in
                             let other = pair.other(than: store.me)
@@ -1057,7 +1071,7 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "Rooms", icon: "person.3", isCollapsed: $roomsCollapsed) {
+                sidebarSection(title: "Rooms", icon: "person.3", isCollapsed: $roomsCollapsed, count: store.rooms.count) {
                     VStack(alignment: .leading, spacing: 1) {
                         let myRooms = store.rooms.filter { $0.members.contains(store.me) || $0.members.isEmpty }
                         ForEach(myRooms) { room in
@@ -1108,61 +1122,17 @@ struct AgentChatPopupView: View {
                 }
 
                 // Pinned Kanban board view above per-ticket entries.
-
-                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        if store.workers.isEmpty {
-                            Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
-                                .padding(.horizontal, 8)
-                        } else {
-                            ForEach(store.workers) { worker in
-                                sidebarRow(
-                                    isActive: store.selection == .agent(worker.name),
-                                    leading: {
-                                        AnyView(
-                                            VStack(spacing: 1) {
-                                                agentBadge(worker.name, size: 28)
-                                                if let model = worker.modelId {
-                                                    let shortModel = model.split(separator: "-").last.map(String.init) ?? model
-                                                    Text(shortModel)
-                                                        .font(.system(size: 8, design: .monospaced))
-                                                        .foregroundColor(.secondary)
-                                                        .opacity(0.7)
-                                                        .lineLimit(1)
-                                                        .truncationMode(.tail)
-                                                }
-                                            }
-                                            .frame(width: 28)
-                                        )
-                                    }
-                                ) {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(worker.displayName)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(chatTextHi)
-                                        if let model = worker.modelId {
-                                            Text(model)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundColor(chatTextLow)
-                                        }
-                                    }
-                                    Spacer()
-                                    if let lane = worker.roleLane, !lane.isEmpty {
-                                        Text(lane)
-                                            .font(.system(size: 8, weight: .medium))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 4).padding(.vertical, 1)
-                                            .background(Capsule().fill(chatAccent.opacity(0.6)))
-                                    }
-                                } onTap: {
-                                    store.selection = .agent(worker.name)
-                                }
-                            }
-                        }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "rectangle.grid.3x2").font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(chatAccent)
+                        Text("BOARD".uppercased())
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(chatTextMid)
+                            .tracking(0.5)
                     }
-                }
-
-                sidebarSection(title: "Board", icon: "rectangle.grid.3x2") {
+                    .padding(.horizontal, 10)
+                    VStack(alignment: .leading, spacing: 1) {
                     sidebarRow(
                         isActive: store.selection == .kanban,
                         leading: {
@@ -1188,6 +1158,47 @@ struct AgentChatPopupView: View {
                     } onTap: {
                         store.selection = .kanban
                     }
+                    }
+                }
+
+                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        if store.workers.isEmpty {
+                            Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                .padding(.horizontal, 8)
+                        } else {
+                            ForEach(store.workers) { worker in
+                                sidebarRow(
+                                    isActive: store.selection == .agent(worker.name),
+                                    leading: {
+                                        AnyView(agentBadge(worker.name, size: 28))
+                                    }
+                                ) {
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(worker.displayName)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(chatTextHi)
+                                        if let modelId = worker.modelId {
+                                            let shortModel = String(modelId.split(separator: "-").last ?? "").lowercased()
+                                            Text(shortModel)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundColor(chatTextLow)
+                                        }
+                                    }
+                                    Spacer(minLength: 4)
+                                    if let role = worker.roleLane, !role.isEmpty {
+                                        Text(role)
+                                            .font(.system(size: 8, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 4).padding(.vertical, 1)
+                                            .background(Capsule().fill(chatAccent.opacity(0.6)))
+                                    }
+                                } onTap: {
+                                    store.selection = .agent(worker.name)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Per-ticket entries removed — use Kanban board view instead.
@@ -1200,27 +1211,32 @@ struct AgentChatPopupView: View {
         .background(chatSidebar)
     }
 
-    private func sidebarSection<C: View>(title: String, icon: String, isCollapsed: Binding<Bool>? = nil, @ViewBuilder content: () -> C) -> some View {
+    private func sidebarSection<C: View>(title: String, icon: String, isCollapsed: Binding<Bool>, count: Int = 0, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                if let collapsed = isCollapsed {
-                    Image(systemName: collapsed.wrappedValue ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 10, weight: .semibold))
+            Button {
+                isCollapsed.wrappedValue.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: isCollapsed.wrappedValue ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(chatAccent)
+                    Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(chatAccent)
+                    Text(title.uppercased())
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundColor(chatTextMid)
-                        .frame(width: 12)
-                        .onTapGesture { collapsed.wrappedValue.toggle() }
+                        .tracking(0.5)
+                    if count > 0 {
+                        Text("(\(count))")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(chatTextLow)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(chatAccent)
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(chatTextMid)
-                    .tracking(0.5)
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, 10)
-            if let collapsed = isCollapsed, !collapsed.wrappedValue {
-                content()
-            } else if isCollapsed == nil {
+            .buttonStyle(.plain)
+            if !isCollapsed.wrappedValue {
                 content()
             }
         }
@@ -1256,6 +1272,11 @@ struct AgentChatPopupView: View {
             Divider().background(chatPrimary.opacity(0.15))
             if store.selection == .kanban {
                 kanbanBoard
+            } else if case .agent = store.selection {
+                VStack {
+                    Text("Agent detail view").font(.system(size: 12)).foregroundColor(chatTextLow)
+                    Spacer()
+                }
             } else {
                 messageFeed
                 Divider().background(chatPrimary.opacity(0.25))
@@ -1363,7 +1384,8 @@ struct AgentChatPopupView: View {
                     .background(chatPanel.opacity(0.5))
                 }
             case .agent:
-                Text("Agent detail").foregroundColor(chatTextLow)
+                HStack { Text("Agent").foregroundColor(chatTextLow); Spacer() }
+                    .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
             case .kanban:
                 HStack(spacing: 10) {
                     Image(systemName: "square.grid.3x2.fill")
@@ -2047,6 +2069,92 @@ struct AgentChatPopupView: View {
                                 }
                             }
                         }
+                        // Cost section
+                        if let costUsd = t.costUsd, costUsd > 0 || (t.costCeilingUsd ?? 0) > 0 {
+                            rightSection(title: "Cost") {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    HStack(spacing: 6) {
+                                        Text(String(format: "$%.2f", t.costUsd ?? 0))
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(chatTextHi)
+                                        if let ceiling = t.costCeilingUsd, ceiling > 0 {
+                                            Text("/ $\(String(format: "%.2f", ceiling))")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(chatTextLow)
+                                        }
+                                    }
+                                    if let ceiling = t.costCeilingUsd, ceiling > 0, let cost = t.costUsd {
+                                        let pct = (cost / ceiling) * 100
+                                        let barColor: Color = pct > 100 ? .red : (pct > 80 ? .orange : chatAccent)
+                                        ProgressView(value: min(pct / 100, 1.0))
+                                            .tint(barColor)
+                                            .frame(height: 4)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // GitHub PR section
+                        if let prUrl = t.prUrl, !prUrl.isEmpty {
+                            rightSection(title: "GitHub") {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    if let branch = t.branch, !branch.isEmpty {
+                                        HStack(spacing: 4) {
+                                            Text("branch:").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                            Text(branch).font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextMid)
+                                        }
+                                    }
+                                    Link(destination: URL(string: prUrl) ?? URL(fileURLWithPath: "/")) {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "link.circle")
+                                                .font(.system(size: 10))
+                                            Text(prUrl.replacingOccurrences(of: "https://", with: ""))
+                                                .font(.system(size: 10))
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                            Spacer()
+                                        }
+                                        .foregroundColor(chatAccent)
+                                    }
+                                    if let prState = t.prState, !prState.isEmpty {
+                                        HStack(spacing: 4) {
+                                            let stateColor: Color = prState == "MERGED" ? .purple : (prState == "OPEN" ? .green : .gray)
+                                            Circle().fill(stateColor).frame(width: 6, height: 6)
+                                            Text(prState.uppercased())
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(stateColor)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Artifact section
+                        if let artifact = t.artifact, !artifact.isEmpty {
+                            rightSection(title: "Artifact") {
+                                DisclosureGroup("View JSON") {
+                                    ScrollView(.horizontal) {
+                                        Text(artifact)
+                                            .font(.system(size: 8, design: .monospaced))
+                                            .foregroundColor(chatTextMid)
+                                            .padding(6)
+                                            .background(chatPanel)
+                                            .cornerRadius(4)
+                                    }
+                                }
+                                .font(.system(size: 10))
+                            }
+                        }
+                        
+                        // Closed timestamp
+                        if let closedAt = t.closedAt, !closedAt.isEmpty {
+                            rightSection(title: "Closed") {
+                                Text("Closed: \(closedAt.prefix(19))")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(chatTextLow)
+                            }
+                        }
+
                         rightSection(title: "Actions") {
                             VStack(spacing: 4) {
                                 // Done tickets get ONLY the Reopen button (no Claim, no Status change, no Link).
@@ -2113,34 +2221,35 @@ struct AgentChatPopupView: View {
                             }
                         }
                     }
-                case .agent(let name):
-                    if let worker = store.workers.first(where: { $0.name == name }) {
-                        rightSection(title: name.uppercased()) {
+                case .agent(let agentName):
+                    if let worker = store.workers.first(where: { $0.name == agentName }) {
+                        rightSection(title: worker.displayName.uppercased()) {
                             VStack(alignment: .leading, spacing: 8) {
-                                HStack(spacing: 8) {
-                                    agentBadge(name, size: 32)
+                                HStack(spacing: 6) {
+                                    agentBadge(worker.name, size: 32)
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(worker.displayName).font(.system(size: 12, weight: .semibold)).foregroundColor(chatTextHi)
                                         if let provider = worker.provider {
-                                            Text(provider).font(.system(size: 10)).foregroundColor(chatTextMid)
+                                            Text(provider).font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextLow)
                                         }
                                     }
-                                    Spacer()
                                 }
-                                HStack(spacing: 4) {
-                                    Text("model:").font(.system(size: 10)).foregroundColor(chatTextLow)
-                                    Text(worker.modelId ?? "—").font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextMid)
-                                }
-                                if let lane = worker.roleLane, !lane.isEmpty {
+                                Divider().opacity(0.3)
+                                if let modelId = worker.modelId {
                                     HStack(spacing: 4) {
-                                        Text("role:").font(.system(size: 10)).foregroundColor(chatTextLow)
-                                        Text(lane).font(.system(size: 10)).foregroundColor(chatTextMid)
+                                        Text("model:").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                        Text(modelId).font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextMid)
+                                    }
+                                }
+                                if let role = worker.roleLane, !role.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Text("lane:").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                        Text(role).font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextMid)
                                     }
                                 }
                             }
                         }
                     }
-
                 case .kanban:
                     rightSection(title: "Board summary") {
                         VStack(alignment: .leading, spacing: 6) {
