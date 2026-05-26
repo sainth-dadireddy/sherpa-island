@@ -146,7 +146,7 @@ struct WorkersBoardView: View {
                 .allowsHitTesting(false)
             }
         }
-        .frame(minWidth: 1300, idealWidth: 1500, minHeight: 700, idealHeight: 800)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
