@@ -155,7 +155,6 @@ enum ConvSelection: Hashable {
     case agent(String)        // AI worker detail
     case workers               // AI workers board view
     case kanban               // board view of all tickets grouped by status
-    case workers               // AI workers board view
 }
 
 enum FilterMode: String, CaseIterable, Identifiable {
@@ -246,18 +245,12 @@ final class ChatStore: ObservableObject {
                 HStack { Text("Agent").foregroundColor(chatTextLow); Spacer() }
                     .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
             case .workers:
-
-                EmptyView()
-
-            case .workers:
-                HStack { Text("AI Workers").foregroundColor(chatTextLow); Spacer() }
-                    .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
+                break
+                // Workers board - stub  // Workers board stub
             case .kanban:
             // Composer in kanban view broadcasts to team:all (board-wide announcement)
             to = "@all"
             roomId = lookupRoomByName("team:all")
-        case .workers:
-            return false
         case .none:
             return false
         }
@@ -824,9 +817,7 @@ final class ChatStore: ObservableObject {
             // No message feed for agent detail
             sql += " AND 1=0"
         case .workers:
-
-            EmptyView()
-
+            break
         case .kanban:
             // No message feed in kanban — the main pane shows the board grid instead
             sql += " AND 1=0"
@@ -1035,6 +1026,59 @@ struct AgentChatPopupView: View {
     private var leftSidebar: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                sidebarSection(title: "Direct Messages", icon: "bubble.left", isCollapsed: $dmCollapsed, count: 0) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        if false { // HIDDEN
+                        ForEach(store.dmPairs) { pair in
+                            let other = pair.other(than: store.me)
+                            let pairKey = ConvSelection.dm(pair.a, pair.b)
+                            let unread = store.unreadCounts["dm:\(other)"] ?? 0
+                            sidebarRow(
+                                isActive: store.selection == pairKey,
+                                leading: {
+                                    AnyView(
+                                        VStack(spacing: 1) {
+                                            agentBadge(other, size: 18)
+                                            let tag = modelTag(for: other)
+                                            if !tag.isEmpty {
+                                                Text(tag)
+                                                    .font(.system(size: 8, design: .monospaced))
+                                                    .foregroundColor(.secondary)
+                                                    .opacity(0.7)
+                                                    .lineLimit(1)
+                                                    .truncationMode(.tail)
+                                            }
+                                        }
+                                        .frame(width: 28)
+                                    )
+                                }
+                            ) {
+                                Text(other)
+                                    .font(.system(size: 12, weight: unread > 0 ? .bold : .medium))
+                                    .foregroundColor(chatTextHi)
+                                if store.onlineAgents.contains(other) {
+                                    Circle().fill(.green).frame(width: 5, height: 5)
+                                }
+                                Spacer(minLength: 4)
+                                if unread > 0 {
+                                    Text("\(unread)")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Capsule().fill(chatAccent))
+                                }
+                            } onTap: {
+                                store.selection = pairKey
+                            }
+                        }
+                        if store.dmPairs.isEmpty {
+                            Text("(DMs hidden)").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                .padding(.horizontal, 8)
+                        }
+                        } // end if false
+                    }
+                }
+
                 sidebarSection(title: "Rooms", icon: "person.3", isCollapsed: $roomsCollapsed, count: store.rooms.count) {
                     VStack(alignment: .leading, spacing: 1) {
                         let myRooms = store.rooms.filter { $0.members.contains(store.me) || $0.members.isEmpty }
@@ -1234,11 +1278,7 @@ struct AgentChatPopupView: View {
         VStack(spacing: 0) {
             conversationHeader
             Divider().background(chatPrimary.opacity(0.15))
-            if store.selection == .workers {
-                WorkersBoardView(specs: AGENT_SPECS)
-            } else if store.selection == .workers {
-                WorkersBoardView(specs: AGENT_SPECS)
-            } else if store.selection == .kanban {
+            if store.selection == .kanban {
                 kanbanBoard
             } else if case .agent = store.selection {
                 VStack {
@@ -1355,12 +1395,8 @@ struct AgentChatPopupView: View {
                 HStack { Text("Agent").foregroundColor(chatTextLow); Spacer() }
                     .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
             case .workers:
-
-                EmptyView()
-
-            case .workers:
-                HStack { Text("AI Workers").foregroundColor(chatTextLow); Spacer() }
-                    .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
+                break
+                // Workers board - stub  // Workers board stub
             case .kanban:
                 HStack(spacing: 10) {
                     Image(systemName: "square.grid.3x2.fill")
@@ -2226,13 +2262,9 @@ struct AgentChatPopupView: View {
                         }
                     }
                 case .workers:
-
-                    EmptyView()
-
-                case .workers:
-                HStack { Text("AI Workers").foregroundColor(chatTextLow); Spacer() }
-                    .padding(.horizontal, 16).padding(.vertical, 12).background(chatPanel.opacity(0.5))
-            case .kanban:
+                    break
+                    // Workers board - stub  // Workers board stub
+                case .kanban:
                     rightSection(title: "Board summary") {
                         VStack(alignment: .leading, spacing: 6) {
                             ForEach(["new","in_progress","blocked","review","done"], id: \.self) { s in
@@ -2420,57 +2452,94 @@ fileprivate struct FlowText: View {
 
 // MARK: - New conversation sheet
 
-// MARK: - Workers board (minimal stub for compilation)
+// MARK: - Workers Board (Kanban by expertise)
 
 struct AgentSpec: Identifiable, Hashable {
     let id: String
     let name: String
     let displayName: String
-    let category: String
+    let category: String  // pm | eng | reviewer | security | research | docs
     let description: String
     let llmOptions: [String]
     let defaultLLM: String
 }
 
-fileprivate let AGENT_SPECS: [AgentSpec] = []
-fileprivate let workerBoardCategories: [String] = []
+fileprivate let AGENT_SPECS: [AgentSpec] = [
+    .init(id: "pm-opus",     name: "pm",       displayName: "PM Lead",
+          category: "pm", description: "Architecture, deep reasoning, agentic loops.",
+          llmOptions: ["claude-opus-4.7", "claude-sonnet-4.6", "gpt-5", "gemini-2.5-pro"],
+          defaultLLM: "claude-opus-4.7"),
+    .init(id: "eng-qwen",    name: "eng",      displayName: "Engineer",
+          category: "eng", description: "Code generation, refactoring; cheapest workhorse.",
+          llmOptions: ["qwen3-coder", "claude-sonnet-4.6", "gpt-5", "devstral"],
+          defaultLLM: "qwen3-coder"),
+    .init(id: "rev-3model",  name: "reviewer", displayName: "Reviewer",
+          category: "reviewer", description: "3-model consensus catches 40%+ more bugs.",
+          llmOptions: ["sherpa-3-model", "deepseek-r1", "claude-opus-4.7", "kimi-k2.5"],
+          defaultLLM: "sherpa-3-model"),
+    .init(id: "arch-opus",   name: "architect", displayName: "Architect",
+          category: "pm", description: "System design, trade-off analysis, RCA.",
+          llmOptions: ["claude-opus-4.7", "deepseek-r1", "gpt-5", "gemini-2.5-pro"],
+          defaultLLM: "claude-opus-4.7"),
+    .init(id: "sec-kimi",    name: "security", displayName: "Security",
+          category: "security", description: "OWASP scans, IAM review, secret hunting.",
+          llmOptions: ["kimi-k2.5", "sherpa-security-analyst", "claude-opus-4.7", "deepseek-r1"],
+          defaultLLM: "kimi-k2.5"),
+    .init(id: "res-4model",  name: "researcher", displayName: "Researcher",
+          category: "research", description: "4-model research pipeline; long-ctx synthesis.",
+          llmOptions: ["sherpa-researcher", "gemini-2.5-pro", "claude-opus-4.7", "llama-4-scout"],
+          defaultLLM: "sherpa-researcher"),
+    .init(id: "ocr-gem",     name: "ocr",     displayName: "OCR/Multimodal",
+          category: "research", description: "Native multimodal: PDFs, images, screenshots.",
+          llmOptions: ["gemini-2.5-pro", "agy", "nova-pro", "claude-opus-4.7"],
+          defaultLLM: "gemini-2.5-pro"),
+    .init(id: "doc-nova",    name: "docs",    displayName: "Doc Writer",
+          category: "docs", description: "READMEs, changelogs, summaries; cheap.",
+          llmOptions: ["nova-lite", "claude-haiku-4.5", "gpt-oss-120b", "gpt-4.1-nano"],
+          defaultLLM: "nova-lite"),
+    .init(id: "qa-haiku",    name: "qa",      displayName: "QA Tester",
+          category: "docs", description: "Test plans, edge cases, regression.",
+          llmOptions: ["claude-haiku-4.5", "qwen3-coder", "gemini-2.5-flash", "gpt-4.1-nano"],
+          defaultLLM: "claude-haiku-4.5"),
+    .init(id: "bulk-nm",     name: "classify", displayName: "Classifier",
+          category: "docs", description: "Bulk labeling, routing; nova-micro = 75x cheaper.",
+          llmOptions: ["nova-micro", "gemma-3-4b", "gpt-oss-20b", "claude-haiku-4.5"],
+          defaultLLM: "nova-micro"),
+    .init(id: "aws-nova",    name: "aws",     displayName: "AWS Specialist",
+          category: "research", description: "Lambda, IAM, Terraform; deep AWS knowledge.",
+          llmOptions: ["sherpa-aws-specialist", "claude-opus-4.7", "gpt-5", "gemini-2.5-pro"],
+          defaultLLM: "sherpa-aws-specialist"),
+    .init(id: "scrape-web",  name: "scraper", displayName: "Web Researcher",
+          category: "research", description: "Anti-bot scraping, content extraction.",
+          llmOptions: ["sherpa-web-researcher", "sherpa-scraper", "gpt-5", "agy"],
+          defaultLLM: "sherpa-web-researcher"),
+]
 
-fileprivate struct WorkersBoardView: View {
-    let specs: [AgentSpec]
-    var body: some View { Text("Workers board (TODO)").foregroundColor(chatTextLow) }
-}
-
-fileprivate struct WorkerCard: View {
-    let spec: AgentSpec
-    var body: some View { Text(spec.displayName) }
-}
-
-// MARK: - Workers board view (stubs for compilation)
-
-struct AgentSpec: Identifiable, Hashable {
-    let id: String
-    let name: String
-    let displayName: String
-    let category: String
-    let description: String
-    let llmOptions: [String]
-    let defaultLLM: String
-}
-
-fileprivate let AGENT_SPECS: [AgentSpec] = []
-fileprivate let workerBoardCategories: [String] = []
+fileprivate let workerBoardCategories = ["pm", "eng", "reviewer", "security", "research", "docs"]
 
 fileprivate struct WorkersBoardView: View {
     let specs: [AgentSpec]
     var body: some View {
-        Text("Workers board coming soon").foregroundColor(chatTextLow)
-    }
-}
-
-fileprivate struct WorkerCard: View {
-    let spec: AgentSpec
-    var body: some View {
-        Text(spec.displayName)
+        VStack {
+            Text("AI Workers Board (\(specs.count) agents)").foregroundColor(chatTextHi)
+            ScrollView(.horizontal) {
+                HStack(spacing: 16) {
+                    ForEach(specs) { spec in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(spec.displayName).font(.system(size: 12, weight: .semibold)).foregroundColor(chatTextHi)
+                            Text(spec.description).font(.system(size: 10)).foregroundColor(chatTextMid).lineLimit(2)
+                            Picker("Model", selection: .constant(spec.defaultLLM)) {
+                                ForEach(spec.llmOptions, id: \.self) { m in Text(m).tag(m) }
+                            }.pickerStyle(.menu).frame(width: 120)
+                        }
+                        .padding(8).background(RoundedRectangle(cornerRadius: 6).fill(chatPanel))
+                        .frame(width: 200)
+                    }
+                }
+                .padding(12)
+            }
+            Spacer()
+        }.background(chatBg)
     }
 }
 
