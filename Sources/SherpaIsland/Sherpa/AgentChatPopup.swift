@@ -937,9 +937,13 @@ struct AgentChatPopupView: View {
         .sheet(isPresented: $showNewConvSheet) {
             NewConversationSheet(store: store, isPresented: $showNewConvSheet)
         }
-        .onChange(of: store.selection) { _, _ in
-            // Picking a conversation drops you out of the workers board.
-            if showWorkersBoard { showWorkersBoard = false }
+        .onChange(of: store.selection) { _, newVal in
+            // Picking a real conversation drops you out of the workers board.
+            // Ignore .none transitions (the Agents row itself sets selection = .none
+            // before flipping showWorkersBoard = true — we don't want to fight it).
+            if showWorkersBoard && newVal != .none {
+                showWorkersBoard = false
+            }
         }
     }
 
@@ -1167,42 +1171,31 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count) {
+                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: 1) {
                     VStack(alignment: .leading, spacing: 1) {
-                        if store.workers.isEmpty {
-                            Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
-                                .padding(.horizontal, 8)
-                        } else {
-                            ForEach(store.workers) { worker in
-                                sidebarRow(
-                                    isActive: store.selection == .agent(worker.name),
-                                    leading: {
-                                        AnyView(agentBadge(worker.name, size: 28))
-                                    }
-                                ) {
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text(worker.displayName)
-                                            .font(.system(size: 12, weight: .medium))
-                                            .foregroundColor(chatTextHi)
-                                        if let modelId = worker.modelId {
-                                            let shortModel = String(modelId.split(separator: "-").last ?? "").lowercased()
-                                            Text(shortModel)
-                                                .font(.system(size: 9, design: .monospaced))
-                                                .foregroundColor(chatTextLow)
-                                        }
-                                    }
-                                    Spacer(minLength: 4)
-                                    if let role = worker.roleLane, !role.isEmpty {
-                                        Text(role)
-                                            .font(.system(size: 8, weight: .semibold))
-                                            .foregroundColor(.white)
-                                            .padding(.horizontal, 4).padding(.vertical, 1)
-                                            .background(Capsule().fill(chatAccent.opacity(0.6)))
-                                    }
-                                } onTap: {
-                                    store.selection = .agent(worker.name)
-                                }
+                        sidebarRow(
+                            isActive: showWorkersBoard,
+                            leading: {
+                                AnyView(
+                                    Image(systemName: "person.3.sequence")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(chatAccent)
+                                        .frame(width: 18, height: 18)
+                                )
                             }
+                        ) {
+                            Text("Agents")
+                                .font(.system(size: 12, weight: showWorkersBoard ? .bold : .medium))
+                                .foregroundColor(chatTextHi)
+                            Spacer(minLength: 4)
+                            Text("\(allWorkerCards().count)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(chatTextLow)
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Capsule().fill(chatPanel))
+                        } onTap: {
+                            store.selection = .none
+                            showWorkersBoard = true
                         }
                     }
                 }
@@ -1278,16 +1271,20 @@ struct AgentChatPopupView: View {
 
     private var mainPane: some View {
         VStack(spacing: 0) {
-            conversationHeader
-            Divider().background(chatPrimary.opacity(0.15))
-            if store.selection == .kanban {
-                kanbanBoard
-            } else if case .agent(let name) = store.selection {
-                AgentDetailPane(agentName: name)
+            if showWorkersBoard {
+                WorkersBoardView()
             } else {
-                messageFeed
-                Divider().background(chatPrimary.opacity(0.25))
-                composer
+                conversationHeader
+                Divider().background(chatPrimary.opacity(0.15))
+                if store.selection == .kanban {
+                    kanbanBoard
+                } else if case .agent(let name) = store.selection {
+                    AgentDetailPane(agentName: name)
+                } else {
+                    messageFeed
+                    Divider().background(chatPrimary.opacity(0.25))
+                    composer
+                }
             }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
