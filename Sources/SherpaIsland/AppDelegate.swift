@@ -37,6 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupHotkeys()
         setupStatusItem()
 
+        // Always-on chat watcher: macOS banners + voice + Tink sound
+        // for inter-agent chat msgs targeting current user. Independent
+        // of the chat popup being open.
+        AgentChatWatcher.shared.start()
+
         // Re-check accessibility whenever the app gains focus. After the
         // user grants permission in System Settings and switches back, the
         // banner should clear without waiting for the 2s poll tick or a

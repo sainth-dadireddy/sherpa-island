@@ -31,3 +31,12 @@ dist/
 *.swp
 *~
 .tests_passed
+
+# Python venv (sherpa-island web backend)
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets pulled from AWS Secrets Manager — NEVER commit
+.env
+.env.local
