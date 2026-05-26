@@ -224,10 +224,10 @@ struct CalendarWidgetView: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     @Previewable @State var monitor = CalendarMonitor()
 
     return CalendarWidgetView(monitor: monitor)
         .padding()
         .frame(maxWidth: 300)
-}
+} */

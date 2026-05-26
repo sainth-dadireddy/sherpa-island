@@ -226,7 +226,7 @@ struct BatteryView: View {
 
 // MARK: - Preview
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     @Previewable @State var monitor = BatteryMonitor()
 
     VStack(spacing: 16) {
@@ -245,4 +245,4 @@ struct BatteryView: View {
             .frame(maxWidth: .infinity)
     }
     .padding()
-}
+} */

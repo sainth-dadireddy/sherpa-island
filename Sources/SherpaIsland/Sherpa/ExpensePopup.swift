@@ -816,4 +816,4 @@ final class ExpensePopupWindowController: NSWindowController {
     }
 }
 
-#Preview { ExpensePopupView() }
+/* DISABLED-PREVIEW #Preview { ExpensePopupView() } */

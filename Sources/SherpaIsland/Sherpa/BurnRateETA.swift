@@ -310,7 +310,7 @@ struct BurnRateView: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     let monitor = BurnRateMonitor()
     monitor.burnPctPerMin = 0.4
     monitor.etaSeconds = 8220 // 2h 13m
@@ -319,4 +319,4 @@ struct BurnRateView: View {
     return BurnRateView(monitor: monitor)
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
-}
+} */

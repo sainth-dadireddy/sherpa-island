@@ -480,4 +480,4 @@ final class TempoPopupWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
-#Preview { TempoPopupView() }
+/* DISABLED-PREVIEW #Preview { TempoPopupView() } */

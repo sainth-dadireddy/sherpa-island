@@ -347,7 +347,7 @@ struct TemperatureView: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     TemperatureView()
         .frame(width: 200, height: 140)
-}
+} */

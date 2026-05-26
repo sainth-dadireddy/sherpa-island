@@ -441,8 +441,8 @@ struct BlurEffect: NSViewRepresentable {
 
 // MARK: - Preview
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     WeatherView()
         .padding()
         .frame(width: 300, height: 300)
-}
+} */

@@ -219,8 +219,8 @@ extension View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     MCPHealthView()
         .frame(height: 50)
         .background(Color.black)
-}
+} */

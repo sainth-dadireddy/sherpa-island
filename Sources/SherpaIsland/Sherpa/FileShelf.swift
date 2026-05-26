@@ -334,6 +334,6 @@ struct FileShelfItemView: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     FileShelfView()
-}
+} */

@@ -380,7 +380,7 @@ struct MemoryResultRow: View {
 
 // MARK: - Preview
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     MemoryrPopupView()
         .preferredColorScheme(.dark)
-}
+} */

@@ -177,6 +177,6 @@ struct CommandResultRow: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     CommandPalette(isPresented: .constant(true))
-}
+} */

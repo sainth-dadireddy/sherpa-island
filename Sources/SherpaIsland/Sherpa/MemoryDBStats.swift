@@ -154,7 +154,7 @@ func humanReadableAge(from date: Date?) -> String {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     let monitor = MemoryDBMonitor()
     MemoryDBStatsView(monitor: monitor)
-}
+} */

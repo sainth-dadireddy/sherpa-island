@@ -149,7 +149,7 @@ struct CostLedgerView: View {
     }
 }
 
-#Preview {
+/* DISABLED-PREVIEW #Preview {
     CostLedgerView(costLedger: {
         let ledger = CostLedger()
         ledger.total24h = 24.40
@@ -160,4 +160,4 @@ struct CostLedgerView: View {
         ]
         return ledger
     }())
-}
+} */

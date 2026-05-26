@@ -691,7 +691,7 @@ final class ChatStore: ObservableObject {
             FROM rooms
             WHERE name NOT LIKE 'dm:%'
               AND (name NOT LIKE 'team:%' AND name NOT LIKE 'ticket:%')
-              AND category != 'group'
+              AND COALESCE(category, '') != 'group'
             ORDER BY created_at DESC LIMIT 50
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -2659,4 +2659,4 @@ final class AgentChatPopupWindowController: NSWindowController {
     }
 }
 
-#Preview { AgentChatPopupView() }
+/* DISABLED-PREVIEW #Preview { AgentChatPopupView() } */

@@ -8,6 +8,11 @@ struct SettingsViewV2: View {
     @AppStorage("sherpa.soundOnNotification") var soundOnNotification = true
     @AppStorage("sherpa.animationsEnabled") var animationsEnabled = true
 
+    // Agent Chat (cross-CLI team) notification toggles
+    @AppStorage("AgentChat.voiceEnabled") var chatVoiceEnabled = true
+    @AppStorage("AgentChat.notificationsEnabled") var chatNotificationsEnabled = true
+    @AppStorage("AgentChat.soundEnabled") var chatSoundEnabled = true
+
     @State private var selectedTab: Int = 0
 
     var body: some View {
@@ -130,6 +135,36 @@ struct SettingsViewV2: View {
             .buttonStyle(.bordered)
             .padding(.vertical, 6)
 
+            // MARK: - Agent Chat section
+            Divider().padding(.vertical, 8)
+            Text("Agent Team Chat")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.secondary)
+
+            HStack {
+                Text("Voice on new msg")
+                Spacer()
+                Toggle("", isOn: $chatVoiceEnabled)
+            }
+            .help("Speaks sender name when a new chat msg arrives")
+            .padding(.vertical, 4)
+
+            HStack {
+                Text("Banner notification")
+                Spacer()
+                Toggle("", isOn: $chatNotificationsEnabled)
+            }
+            .help("macOS notification banner with sender + msg snippet")
+            .padding(.vertical, 4)
+
+            HStack {
+                Text("Tink sound")
+                Spacer()
+                Toggle("", isOn: $chatSoundEnabled)
+            }
+            .help("Tink alert sound on new msg arrival")
+            .padding(.vertical, 4)
+
             Spacer()
         }
         .padding(16)
@@ -178,7 +213,7 @@ struct SettingsViewV2: View {
     }
 }
 
-@available(macOS 14, *)
-#Preview {
+// DISABLED-AVAIL @available(macOS 14, *)
+/* DISABLED-PREVIEW #Preview {
     SettingsViewV2()
-}
+} */
