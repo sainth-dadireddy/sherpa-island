@@ -913,6 +913,7 @@ struct AgentChatPopupView: View {
     @AppStorage("sidebar.collapsed.dm") private var dmCollapsed: Bool = false
     @AppStorage("sidebar.collapsed.rooms") private var roomsCollapsed: Bool = false
     @AppStorage("sidebar.collapsed.workers") private var workersCollapsed: Bool = false
+    @State private var showWorkersBoard: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -935,6 +936,9 @@ struct AgentChatPopupView: View {
         .onKeyPress(.escape) { dismiss(); return .handled }
         .sheet(isPresented: $showNewConvSheet) {
             NewConversationSheet(store: store, isPresented: $showNewConvSheet)
+        }
+        .sheet(isPresented: $showWorkersBoard) {
+            WorkersBoardView()
         }
     }
 
@@ -993,6 +997,22 @@ struct AgentChatPopupView: View {
                 .tint(chatAccent)
                 .frame(width: 90)
             }
+
+            Button {
+                showWorkersBoard = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "cpu").font(.system(size: 11))
+                    Text("AI Workers").font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(chatTextHi)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(
+                    Capsule().stroke(chatPrimary.opacity(0.4), lineWidth: 0.5)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("View all AI Workers")
 
             Button {
                 rightOpen.toggle()
