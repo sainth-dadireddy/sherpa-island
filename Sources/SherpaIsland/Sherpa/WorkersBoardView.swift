@@ -97,14 +97,12 @@ func allWorkerCards() -> [WorkerCardData] {
 
 
 struct WorkersBoardView: View {
-    @Environment(\.dismiss) private var dismiss
-
     var body: some View {
         let cards = allWorkerCards()
         let byCat = Dictionary(grouping: cards, by: { $0.category })
 
         VStack(spacing: 0) {
-            // Header with title and close button
+            // Header — inline view, no close button (navigate via sidebar)
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("AI Workers")
@@ -114,16 +112,6 @@ struct WorkersBoardView: View {
                         .foregroundColor(.secondary)
                 }
                 Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(.secondary)
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.escape, modifiers: [])
-                .help("Close (Esc)")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

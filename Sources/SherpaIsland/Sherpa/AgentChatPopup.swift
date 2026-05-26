@@ -1266,20 +1266,22 @@ struct AgentChatPopupView: View {
 
     private var mainPane: some View {
         VStack(spacing: 0) {
-            conversationHeader
-            Divider().background(chatPrimary.opacity(0.15))
-            if store.selection == .kanban {
-                kanbanBoard
-            } else if case .agent(let name) = store.selection {
-                if name == "__board__" {
-                    WorkersBoardView()
-                } else {
-                    AgentDetailPane(agentName: name)
-                }
+            // Workers board owns the full pane like Kanban does — skip
+            // conversationHeader/divider so it doesn't shift layout.
+            if case .agent(let name) = store.selection, name == "__board__" {
+                WorkersBoardView()
             } else {
-                messageFeed
-                Divider().background(chatPrimary.opacity(0.25))
-                composer
+                conversationHeader
+                Divider().background(chatPrimary.opacity(0.15))
+                if store.selection == .kanban {
+                    kanbanBoard
+                } else if case .agent(let name) = store.selection {
+                    AgentDetailPane(agentName: name)
+                } else {
+                    messageFeed
+                    Divider().background(chatPrimary.opacity(0.25))
+                    composer
+                }
             }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
