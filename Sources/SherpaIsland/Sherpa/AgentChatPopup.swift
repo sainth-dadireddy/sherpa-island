@@ -937,8 +937,9 @@ struct AgentChatPopupView: View {
         .sheet(isPresented: $showNewConvSheet) {
             NewConversationSheet(store: store, isPresented: $showNewConvSheet)
         }
-        .sheet(isPresented: $showWorkersBoard) {
-            WorkersBoardView()
+        .onChange(of: store.selection) { _, _ in
+            // Picking a conversation drops you out of the workers board.
+            if showWorkersBoard { showWorkersBoard = false }
         }
     }
 
@@ -1277,19 +1278,23 @@ struct AgentChatPopupView: View {
 
     private var mainPane: some View {
         VStack(spacing: 0) {
-            conversationHeader
-            Divider().background(chatPrimary.opacity(0.15))
-            if store.selection == .kanban {
-                kanbanBoard
-            } else if case .agent = store.selection {
-                VStack {
-                    Text("Agent detail view").font(.system(size: 12)).foregroundColor(chatTextLow)
-                    Spacer()
-                }
+            if showWorkersBoard {
+                WorkersBoardView()
             } else {
-                messageFeed
-                Divider().background(chatPrimary.opacity(0.25))
-                composer
+                conversationHeader
+                Divider().background(chatPrimary.opacity(0.15))
+                if store.selection == .kanban {
+                    kanbanBoard
+                } else if case .agent = store.selection {
+                    VStack {
+                        Text("Agent detail view").font(.system(size: 12)).foregroundColor(chatTextLow)
+                        Spacer()
+                    }
+                } else {
+                    messageFeed
+                    Divider().background(chatPrimary.opacity(0.25))
+                    composer
+                }
             }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
