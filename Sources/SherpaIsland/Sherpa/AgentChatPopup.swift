@@ -913,7 +913,7 @@ struct AgentChatPopupView: View {
     @AppStorage("sidebar.collapsed.dm") private var dmCollapsed: Bool = false
     @AppStorage("sidebar.collapsed.rooms") private var roomsCollapsed: Bool = false
     @AppStorage("sidebar.collapsed.workers") private var workersCollapsed: Bool = false
-    @State private var showWorkersBoard: Bool = false
+    // showWorkersBoard removed — use ConvSelection.agent("__board__") instead
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -936,14 +936,6 @@ struct AgentChatPopupView: View {
         .onKeyPress(.escape) { dismiss(); return .handled }
         .sheet(isPresented: $showNewConvSheet) {
             NewConversationSheet(store: store, isPresented: $showNewConvSheet)
-        }
-        .onChange(of: store.selection) { _, newVal in
-            // Picking a real conversation drops you out of the workers board.
-            // Ignore .none transitions (the Agents row itself sets selection = .none
-            // before flipping showWorkersBoard = true — we don't want to fight it).
-            if showWorkersBoard && newVal != .none {
-                showWorkersBoard = false
-            }
         }
     }
 
@@ -1173,8 +1165,12 @@ struct AgentChatPopupView: View {
 
                 sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: 1) {
                     VStack(alignment: .leading, spacing: 1) {
+                        let isActive: Bool = {
+                            if case .agent(let n) = store.selection, n == "__board__" { return true }
+                            return false
+                        }()
                         sidebarRow(
-                            isActive: showWorkersBoard,
+                            isActive: isActive,
                             leading: {
                                 AnyView(
                                     Image(systemName: "person.3.sequence")
@@ -1185,7 +1181,7 @@ struct AgentChatPopupView: View {
                             }
                         ) {
                             Text("Agents")
-                                .font(.system(size: 12, weight: showWorkersBoard ? .bold : .medium))
+                                .font(.system(size: 12, weight: isActive ? .bold : .medium))
                                 .foregroundColor(chatTextHi)
                             Spacer(minLength: 4)
                             Text("\(allWorkerCards().count)")
@@ -1194,8 +1190,7 @@ struct AgentChatPopupView: View {
                                 .padding(.horizontal, 4).padding(.vertical, 1)
                                 .background(Capsule().fill(chatPanel))
                         } onTap: {
-                            store.selection = .none
-                            showWorkersBoard = true
+                            store.selection = .agent("__board__")
                         }
                     }
                 }
@@ -1271,20 +1266,20 @@ struct AgentChatPopupView: View {
 
     private var mainPane: some View {
         VStack(spacing: 0) {
-            if showWorkersBoard {
-                WorkersBoardView()
-            } else {
-                conversationHeader
-                Divider().background(chatPrimary.opacity(0.15))
-                if store.selection == .kanban {
-                    kanbanBoard
-                } else if case .agent(let name) = store.selection {
-                    AgentDetailPane(agentName: name)
+            conversationHeader
+            Divider().background(chatPrimary.opacity(0.15))
+            if store.selection == .kanban {
+                kanbanBoard
+            } else if case .agent(let name) = store.selection {
+                if name == "__board__" {
+                    WorkersBoardView()
                 } else {
-                    messageFeed
-                    Divider().background(chatPrimary.opacity(0.25))
-                    composer
+                    AgentDetailPane(agentName: name)
                 }
+            } else {
+                messageFeed
+                Divider().background(chatPrimary.opacity(0.25))
+                composer
             }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
