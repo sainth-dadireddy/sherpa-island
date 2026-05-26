@@ -104,33 +104,61 @@ struct WorkersBoardView: View {
         let byCat = Dictionary(grouping: cards, by: { $0.category })
 
         VStack(spacing: 0) {
-            HStack {
-                Text("AI Workers")
-                    .font(.system(size: 16, weight: .semibold))
+            // Header with title and close button
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI Workers")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("(\(cards.count) total)")
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                }
                 Spacer()
-                Button("Close") { dismiss() }
-                    .keyboardShortcut(.escape, modifiers: [])
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape, modifiers: [])
+                .help("Close (Esc)")
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
             .background(Color(red: 0.20, green: 0.235, blue: 0.302))
 
             Divider()
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(WorkerCategory.allCases) { cat in
-                        let items = byCat[cat] ?? []
-                        if !items.isEmpty {
-                            CategoryColumn(category: cat, cards: items)
+            ZStack(alignment: .trailing) {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(WorkerCategory.allCases) { cat in
+                            let items = byCat[cat] ?? []
+                            if !items.isEmpty {
+                                CategoryColumn(category: cat, cards: items)
+                            }
                         }
                     }
+                    .padding(12)
                 }
-                .padding(12)
+                .background(Color(red: 0.165, green: 0.192, blue: 0.255))
+
+                // Subtle fade gradient on right edge to hint more content
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: Color(red: 0.165, green: 0.192, blue: 0.255).opacity(0), location: 0.7),
+                        .init(color: Color(red: 0.165, green: 0.192, blue: 0.255), location: 1.0)
+                    ]),
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 30)
+                .allowsHitTesting(false)
             }
-            .background(Color(red: 0.165, green: 0.192, blue: 0.255))
         }
-        .frame(minWidth: 1100, idealWidth: 1300, minHeight: 600, idealHeight: 700)
+        .frame(minWidth: 1300, idealWidth: 1500, minHeight: 700, idealHeight: 800)
     }
 }
 

@@ -998,21 +998,6 @@ struct AgentChatPopupView: View {
                 .frame(width: 90)
             }
 
-            Button {
-                showWorkersBoard = true
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "cpu").font(.system(size: 11))
-                    Text("AI Workers").font(.system(size: 11, weight: .medium))
-                }
-                .foregroundColor(chatTextHi)
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(
-                    Capsule().stroke(chatPrimary.opacity(0.4), lineWidth: 0.5)
-                )
-            }
-            .buttonStyle(.plain)
-            .help("View all AI Workers")
 
             Button {
                 rightOpen.toggle()
@@ -1181,7 +1166,7 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count) {
+                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed, count: store.workers.count, onTap: { showWorkersBoard = true }) {
                     VStack(alignment: .leading, spacing: 1) {
                         if store.workers.isEmpty {
                             Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
@@ -1231,10 +1216,14 @@ struct AgentChatPopupView: View {
         .background(chatSidebar)
     }
 
-    private func sidebarSection<C: View>(title: String, icon: String, isCollapsed: Binding<Bool>, count: Int = 0, @ViewBuilder content: () -> C) -> some View {
+    private func sidebarSection<C: View>(title: String, icon: String, isCollapsed: Binding<Bool>, count: Int = 0, onTap: (() -> Void)? = nil, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
-                isCollapsed.wrappedValue.toggle()
+                if let action = onTap {
+                    action()
+                } else {
+                    isCollapsed.wrappedValue.toggle()
+                }
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: isCollapsed.wrappedValue ? "chevron.right" : "chevron.down")
