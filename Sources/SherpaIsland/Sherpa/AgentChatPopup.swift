@@ -109,6 +109,14 @@ struct ChatTicket: Identifiable, Hashable {
     let updatedAt: String
     let dueAt: String?
     let parentTicket: String?
+    let costUsd: Double?
+    let costCeilingUsd: Double?
+    let artifact: String?
+    let closedAt: String?
+    let repo: String?
+    let branch: String?
+    let prUrl: String?
+    let prState: String?
 }
 
 struct ChatRoom: Identifiable, Hashable {
@@ -129,11 +137,22 @@ struct DMPair: Identifiable, Hashable {
     func other(than me: String) -> String { a == me ? b : a }
 }
 
+struct AgentRow: Identifiable, Hashable {
+    let name: String
+    let displayName: String
+    let roleLane: String?
+    let modelId: String?
+    let provider: String?
+    var id: String { name }
+}
+
 enum ConvSelection: Hashable {
     case none
     case dm(String, String)   // canonical sorted pair
     case room(String)
     case ticket(String)
+    case agent(String)        // AI worker detail
+    case kanban               // board view of all tickets grouped by status
 }
 
 enum FilterMode: String, CaseIterable, Identifiable {
@@ -152,6 +171,7 @@ final class ChatStore: ObservableObject {
     @Published var dmPairs: [DMPair] = []
     @Published var rooms: [ChatRoom] = []
     @Published var tickets: [ChatTicket] = []
+    @Published var workers: [AgentRow] = []
     @Published var onlineAgents: Set<String> = []
     @Published var pollError: String?
 
@@ -160,6 +180,15 @@ final class ChatStore: ObservableObject {
         didSet { UserDefaults.standard.set(me, forKey: "AgentChat.me") }
     }
     @Published var filter: FilterMode = .all
+
+    // Per-conversation unread counts for the current user.
+    // Keys: "dm:other" for DMs, "room:<roomId>" for rooms, "ticket:<id>" for tickets.
+    @Published var unreadCounts: [String: Int] = [:]
+    // Per-message read receipts: msgId -> set of agents that have read it.
+    @Published var readBy: [Int: Set<String>] = [:]
+    // Track last seen highest msg id so we can play a sound only on truly new arrivals.
+    private var lastSeenMaxId: Int = 0
+    private var soundEnabled: Bool { UserDefaults.standard.object(forKey: "AgentChat.soundEnabled") as? Bool ?? true }
 
     private let dbPath = NSHomeDirectory() + "/.claude/memory/agent_chat.db"
     private var pollTimer: Timer?
@@ -195,7 +224,27 @@ final class ChatStore: ObservableObject {
             to = "@all"   // broadcast to all room members
         case .ticket(let tid):
             ticketId = tid
-            to = "ticket"
+            to = "@all"   // ticket msgs broadcast within ticket's room
+            // Use ticket's linked room if one exists, else AUTO-CREATE one
+            // (isolated to ticket — does NOT leak to team:all anymore).
+            if let existing = lookupRoomForTicket(tid) {
+                roomId = existing
+            } else {
+                // Auto-create a per-ticket room with all known agents
+                let newId = createRoom(
+                    name: "ticket:\(tid)",
+                    members: knownAgents,
+                    description: "Linked room for \(tid)",
+                    ticketId: tid
+                )
+                roomId = newId
+            }
+        case .agent:
+                Text("Agent detail").foregroundColor(chatTextLow)
+            case .kanban:
+            // Composer in kanban view broadcasts to team:all (board-wide announcement)
+            to = "@all"
+            roomId = lookupRoomByName("team:all")
         case .none:
             return false
         }
@@ -222,6 +271,34 @@ final class ChatStore: ObservableObject {
         let pair = canonicalPair(me, other)
         selection = .dm(pair.0, pair.1)
         load()
+    }
+
+    /// Look up the room linked to a ticket via rooms.ticket_id.
+    private func lookupRoomForTicket(_ ticketId: String) -> String? {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return nil }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT id FROM rooms WHERE ticket_id = ? LIMIT 1", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, ticketId, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return String(cString: sqlite3_column_text(stmt, 0))
+    }
+
+    /// Look up a room id by canonical name (e.g. "team:all").
+    private func lookupRoomByName(_ name: String) -> String? {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return nil }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        guard sqlite3_prepare_v2(db, "SELECT id FROM rooms WHERE name = ? LIMIT 1", -1, &stmt, nil) == SQLITE_OK else { return nil }
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT)
+        guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
+        return String(cString: sqlite3_column_text(stmt, 0))
     }
 
     func createRoom(name: String, members: [String], description: String, ticketId: String?) -> String? {
@@ -310,6 +387,28 @@ final class ChatStore: ObservableObject {
         let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
         sqlite3_bind_text(stmt, 1, status, -1, SQLITE_TRANSIENT)
         sqlite3_bind_text(stmt, 2, id, -1, SQLITE_TRANSIENT)
+        _ = sqlite3_step(stmt)
+        load()
+    }
+
+    /// Assign (or unassign) a ticket's owner. Passing nil clears owner.
+    func assignTicket(_ id: String, owner: String?) {
+        var db: OpaquePointer?
+        guard sqlite3_open(dbPath, &db) == SQLITE_OK else { return }
+        defer { sqlite3_close(db) }
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        let sql = owner == nil
+            ? "UPDATE tickets SET owner_agent = NULL, updated_at = datetime('now') WHERE id = ?"
+            : "UPDATE tickets SET owner_agent = ?, updated_at = datetime('now') WHERE id = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        if let o = owner {
+            sqlite3_bind_text(stmt, 1, o, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, id, -1, SQLITE_TRANSIENT)
+        } else {
+            sqlite3_bind_text(stmt, 1, id, -1, SQLITE_TRANSIENT)
+        }
         _ = sqlite3_step(stmt)
         load()
     }
@@ -427,17 +526,43 @@ final class ChatStore: ObservableObject {
 
         loadDMPairs(db: db)
         loadRooms(db: db)
+        loadAgents(db: db)
         loadTickets(db: db)
         loadOnline(db: db)
         loadMessages(db: db)
+        loadUnreadCounts(db: db)
+        loadReadReceipts(db: db)
+        maybePlaySound(db: db)
+
+        // Mark currently visible messages as read for me (when convo is selected,
+        // we treat them as seen — drives the unread badge to clear and emits read receipts).
+        markVisibleMessagesRead(db: db)
 
         pollError = nil
     }
 
+    /// When user is actively looking at a conversation, mark its visible messages
+    /// as read by `me` so unread badges clear + read receipts go blue for others.
+    private func markVisibleMessagesRead(db: OpaquePointer?) {
+        guard !messages.isEmpty else { return }
+        let ids = messages.filter { $0.from != me }.map { $0.id }
+        guard !ids.isEmpty else { return }
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        for mid in ids {
+            var stmt: OpaquePointer?
+            let sql = "INSERT OR IGNORE INTO message_reads (message_id, agent, read_at) VALUES (?, ?, datetime('now'))"
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                sqlite3_bind_int(stmt, 1, Int32(mid))
+                sqlite3_bind_text(stmt, 2, me, -1, SQLITE_TRANSIENT)
+                _ = sqlite3_step(stmt)
+            }
+            sqlite3_finalize(stmt)
+        }
+    }
+
     private func loadDMPairs(db: OpaquePointer?) {
         var stmt: OpaquePointer?
-        var pairs = Set<String>()
-        var result: [DMPair] = []
+        var pairsByOther: [String: DMPair] = [:]
         let sql = "SELECT DISTINCT from_agent, to_agent FROM messages WHERE (room_id IS NULL OR room_id='') AND (ticket_id IS NULL OR ticket_id='')"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -445,28 +570,107 @@ final class ChatStore: ObservableObject {
                 let tRaw = String(cString: sqlite3_column_text(stmt, 1))
                 let f = fRaw.lowercased()
                 let t = tRaw.lowercased()
-                // Filter out non-DM rows masquerading as DMs
                 if t.isEmpty || f.isEmpty { continue }
                 if t == "room" || t == "ticket" || t == "@all" || t == "all" { continue }
-                if f == t { continue }  // self-DM noise
+                if f == t { continue }
                 let p = canonicalPair(f, t)
-                let key = "\(p.0)|\(p.1)"
-                if pairs.insert(key).inserted {
-                    result.append(DMPair(a: p.0, b: p.1))
+                let other = p.0 == me ? p.1 : p.0
+                pairsByOther[other] = DMPair(a: p.0, b: p.1)
+            }
+        }
+        sqlite3_finalize(stmt)
+        for other in knownAgents where other != me {
+            let p = canonicalPair(me, other)
+            pairsByOther[other, default: DMPair(a: p.0, b: p.1)] = DMPair(a: p.0, b: p.1)
+        }
+        var result = Array(pairsByOther.values)
+        result.sort { "\($0.a)\($0.b)" < "\($1.a)\($1.b)" }
+        if result != dmPairs { dmPairs = result }
+    }
+
+    /// Compute unread counts per conversation for the current user, using message_reads receipts.
+    private func loadUnreadCounts(db: OpaquePointer?) {
+        var counts: [String: Int] = [:]
+        // For each msg the user could see (DM to me, @all, mentioned me, room with me as member)
+        // count those without a message_reads entry for me.
+        let sql = """
+            SELECT m.id, m.from_agent, m.to_agent, m.room_id
+            FROM messages m
+            WHERE m.from_agent != ?
+              AND (m.to_agent = ? OR m.to_agent = '@all'
+                   OR m.mentions LIKE ?
+                   OR m.room_id IN (SELECT id FROM rooms WHERE members LIKE ?))
+              AND NOT EXISTS (
+                SELECT 1 FROM message_reads r
+                WHERE r.message_id = m.id AND r.agent = ?
+              )
+        """
+        var stmt: OpaquePointer?
+        let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            sqlite3_bind_text(stmt, 1, me, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, me, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 3, "%\"\(me)\"%", -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 4, "%\"\(me)\"%", -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 5, me, -1, SQLITE_TRANSIENT)
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let from = String(cString: sqlite3_column_text(stmt, 1))
+                let to = String(cString: sqlite3_column_text(stmt, 2))
+                let roomId: String? = sqlite3_column_type(stmt, 3) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 3))
+                if let rid = roomId, !rid.isEmpty {
+                    counts["room:\(rid)", default: 0] += 1
+                } else if to == me {
+                    counts["dm:\(from)", default: 0] += 1
                 }
             }
         }
         sqlite3_finalize(stmt)
-        // Ensure built-in pairs exist for "me" so user can start a DM with no history
-        for other in knownAgents where other != me {
-            let p = canonicalPair(me, other)
-            let key = "\(p.0)|\(p.1)"
-            if pairs.insert(key).inserted {
-                result.append(DMPair(a: p.0, b: p.1))
+        if counts != unreadCounts { unreadCounts = counts }
+    }
+
+    /// Load read receipts (which agents have read which msg) for currently visible messages.
+    private func loadReadReceipts(db: OpaquePointer?) {
+        guard !messages.isEmpty else {
+            if !readBy.isEmpty { readBy = [:] }
+            return
+        }
+        let ids = messages.map { String($0.id) }.joined(separator: ",")
+        var out: [Int: Set<String>] = [:]
+        var stmt: OpaquePointer?
+        let sql = "SELECT message_id, agent FROM message_reads WHERE message_id IN (\(ids))"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let mid = Int(sqlite3_column_int(stmt, 0))
+                let agent = String(cString: sqlite3_column_text(stmt, 1))
+                out[mid, default: []].insert(agent)
             }
         }
-        result.sort { "\($0.a)\($0.b)" < "\($1.a)\($1.b)" }
-        if result != dmPairs { dmPairs = result }
+        sqlite3_finalize(stmt)
+        if out != readBy { readBy = out }
+    }
+
+    /// Play a soft notification sound when new msgs arrive (current user not the sender).
+    private func maybePlaySound(db: OpaquePointer?) {
+        guard soundEnabled else { return }
+        var stmt: OpaquePointer?
+        var maxId = 0
+        if sqlite3_prepare_v2(db, "SELECT MAX(id) FROM messages WHERE from_agent != ?", -1, &stmt, nil) == SQLITE_OK {
+            let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            sqlite3_bind_text(stmt, 1, me, -1, SQLITE_TRANSIENT)
+            if sqlite3_step(stmt) == SQLITE_ROW {
+                maxId = Int(sqlite3_column_int(stmt, 0))
+            }
+        }
+        sqlite3_finalize(stmt)
+        if lastSeenMaxId == 0 {
+            // first load — set baseline, don't play sound
+            lastSeenMaxId = maxId
+            return
+        }
+        if maxId > lastSeenMaxId {
+            lastSeenMaxId = maxId
+            NSSound(named: "Tink")?.play()
+        }
     }
 
     private func loadRooms(db: OpaquePointer?) {
@@ -477,7 +681,7 @@ final class ChatStore: ObservableObject {
         let sql = """
             SELECT id, name, category, ticket_id, members, created_by, created_at, description
             FROM rooms
-            WHERE name NOT LIKE 'dm:%'
+            WHERE name NOT LIKE 'dm:%' AND ticket_id IS NULL
             ORDER BY created_at DESC LIMIT 50
         """
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
@@ -501,7 +705,7 @@ final class ChatStore: ObservableObject {
     private func loadTickets(db: OpaquePointer?) {
         var stmt: OpaquePointer?
         var result: [ChatTicket] = []
-        let sql = "SELECT id, title, description, category, owner_agent, status, priority, created_by, created_at, updated_at, due_at, parent_ticket FROM tickets ORDER BY updated_at DESC, created_at DESC LIMIT 20"
+        let sql = "SELECT id, title, description, category, owner_agent, status, priority, created_by, created_at, updated_at, due_at, parent_ticket, cost_usd, cost_ceiling_usd, artifact, closed_at, repo, branch, pr_url, pr_state FROM tickets ORDER BY updated_at DESC, created_at DESC LIMIT 20"
         if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
             while sqlite3_step(stmt) == SQLITE_ROW {
                 let id = String(cString: sqlite3_column_text(stmt, 0))
@@ -516,11 +720,45 @@ final class ChatStore: ObservableObject {
                 let ua = sqlite3_column_type(stmt, 9) == SQLITE_NULL ? "" : String(cString: sqlite3_column_text(stmt, 9))
                 let due: String? = sqlite3_column_type(stmt, 10) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 10))
                 let parent: String? = sqlite3_column_type(stmt, 11) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 11))
-                result.append(ChatTicket(id: id, title: title, description: desc, category: cat, ownerAgent: owner, status: status, priority: prio, createdBy: by, createdAt: ca, updatedAt: ua, dueAt: due, parentTicket: parent))
+                let cost: Double? = sqlite3_column_type(stmt, 12) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 12))
+                let ceiling: Double? = sqlite3_column_type(stmt, 13) == SQLITE_NULL ? nil : Double(sqlite3_column_double(stmt, 13))
+                let artifact: String? = sqlite3_column_type(stmt, 14) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 14))
+                let closed: String? = sqlite3_column_type(stmt, 15) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 15))
+                let repo: String? = sqlite3_column_type(stmt, 16) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 16))
+                let branch: String? = sqlite3_column_type(stmt, 17) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 17))
+                let prUrl: String? = sqlite3_column_type(stmt, 18) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 18))
+                let prState: String? = sqlite3_column_type(stmt, 19) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 19))
+                result.append(ChatTicket(id: id, title: title, description: desc, category: cat, ownerAgent: owner, status: status, priority: prio, createdBy: by, createdAt: ca, updatedAt: ua, dueAt: due, parentTicket: parent, costUsd: cost, costCeilingUsd: ceiling, artifact: artifact, closedAt: closed, repo: repo, branch: branch, prUrl: prUrl, prState: prState))
             }
         }
         sqlite3_finalize(stmt)
         if result != tickets { tickets = result }
+    }
+
+    private func loadAgents(db: OpaquePointer?) {
+        var stmt: OpaquePointer?
+        var result: [AgentRow] = []
+        let sql = "SELECT name, display_name, role_lane, model_id, provider FROM agents WHERE enabled=1 ORDER BY name"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let name = String(cString: sqlite3_column_text(stmt, 0))
+                let displayName = sqlite3_column_type(stmt, 1) == SQLITE_NULL ? name : String(cString: sqlite3_column_text(stmt, 1))
+                let roleLane: String? = sqlite3_column_type(stmt, 2) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 2))
+                let modelId: String? = sqlite3_column_type(stmt, 3) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 3))
+                let provider: String? = sqlite3_column_type(stmt, 4) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(stmt, 4))
+                result.append(AgentRow(name: name, displayName: displayName, roleLane: roleLane, modelId: modelId, provider: provider))
+            }
+        }
+        sqlite3_finalize(stmt)
+        if result.isEmpty {
+            result = [
+                AgentRow(name: "pm", displayName: "Project Manager", roleLane: nil, modelId: "claude-haiku-4.5", provider: "Anthropic"),
+                AgentRow(name: "eng", displayName: "Engineer", roleLane: nil, modelId: "qwen3-coder", provider: "Alibaba"),
+                AgentRow(name: "reviewer", displayName: "Reviewer", roleLane: nil, modelId: "deepseek-r1", provider: "DeepSeek"),
+                AgentRow(name: "qa", displayName: "QA", roleLane: nil, modelId: "claude-haiku-4.5", provider: "Anthropic")
+            ]
+        }
+        if result != workers { workers = result }
     }
 
     private func loadOnline(db: OpaquePointer?) {
@@ -557,6 +795,11 @@ final class ChatStore: ObservableObject {
         case .ticket(let tid):
             sql += " AND ticket_id=?"
             binds.append((1, tid))
+        case .agent:
+                Text("Agent detail").foregroundColor(chatTextLow)
+            case .kanban:
+            // No message feed in kanban — the main pane shows the board grid instead
+            sql += " AND 1=0"
         }
 
         // Filter mode (Active = last 24h, Mentions = me in mentions, Unread = read_at NULL and not from me)
@@ -645,7 +888,13 @@ fileprivate func groupMessages(_ msgs: [ChatMessage]) -> [MessageGroup] {
 
 struct AgentChatPopupView: View {
     @StateObject private var store = ChatStore()
+    @State private var dmCollapsed: Bool = false
+    @State private var roomsCollapsed: Bool = false
+    @State private var workersCollapsed: Bool = false
+
     @State private var composeText: String = ""
+    @State private var kanbanTypeFilter: String = "all"
+    @State private var bdSyncResult: String? = nil
     @State private var rightOpen: Bool = true
     @State private var showNewConvSheet: Bool = false
     @State private var showMentionPopover: Bool = false
@@ -757,11 +1006,12 @@ struct AgentChatPopupView: View {
     private var leftSidebar: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                sidebarSection(title: "Direct Messages", icon: "bubble.left") {
+                sidebarSection(title: "Direct Messages", icon: "bubble.left", isCollapsed: $dmCollapsed) {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(store.dmPairs) { pair in
                             let other = pair.other(than: store.me)
                             let pairKey = ConvSelection.dm(pair.a, pair.b)
+                            let unread = store.unreadCounts["dm:\(other)"] ?? 0
                             sidebarRow(
                                 isActive: store.selection == pairKey,
                                 leading: {
@@ -783,10 +1033,18 @@ struct AgentChatPopupView: View {
                                 }
                             ) {
                                 Text(other)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 12, weight: unread > 0 ? .bold : .medium))
                                     .foregroundColor(chatTextHi)
                                 if store.onlineAgents.contains(other) {
                                     Circle().fill(.green).frame(width: 5, height: 5)
+                                }
+                                Spacer(minLength: 4)
+                                if unread > 0 {
+                                    Text("\(unread)")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Capsule().fill(chatAccent))
                                 }
                             } onTap: {
                                 store.selection = pairKey
@@ -799,11 +1057,12 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "Rooms", icon: "person.3") {
+                sidebarSection(title: "Rooms", icon: "person.3", isCollapsed: $roomsCollapsed) {
                     VStack(alignment: .leading, spacing: 1) {
                         let myRooms = store.rooms.filter { $0.members.contains(store.me) || $0.members.isEmpty }
                         ForEach(myRooms) { room in
                             let key = ConvSelection.room(room.id)
+                            let unread = store.unreadCounts["room:\(room.id)"] ?? 0
                             sidebarRow(
                                 isActive: store.selection == key,
                                 leading: {
@@ -815,14 +1074,23 @@ struct AgentChatPopupView: View {
                                     )
                                 }
                             ) {
-                                Text(room.name).font(.system(size: 12, weight: .medium))
+                                Text(room.name)
+                                    .font(.system(size: 12, weight: unread > 0 ? .bold : .medium))
                                     .foregroundColor(chatTextHi).lineLimit(1)
                                 Spacer(minLength: 4)
-                                Text("\(room.members.count)")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(chatTextLow)
-                                    .padding(.horizontal, 4).padding(.vertical, 1)
-                                    .background(Capsule().fill(chatPanel))
+                                if unread > 0 {
+                                    Text("\(unread)")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(Capsule().fill(chatAccent))
+                                } else {
+                                    Text("\(room.members.count)")
+                                        .font(.system(size: 9, design: .monospaced))
+                                        .foregroundColor(chatTextLow)
+                                        .padding(.horizontal, 4).padding(.vertical, 1)
+                                        .background(Capsule().fill(chatPanel))
+                                }
                             } onTap: {
                                 store.selection = key
                             }
@@ -839,36 +1107,91 @@ struct AgentChatPopupView: View {
                     }
                 }
 
-                sidebarSection(title: "Tickets", icon: "checkmark.seal") {
+                // Pinned Kanban board view above per-ticket entries.
+
+                sidebarSection(title: "AI Workers", icon: "cpu", isCollapsed: $workersCollapsed) {
                     VStack(alignment: .leading, spacing: 1) {
-                        ForEach(store.tickets) { t in
-                            let key = ConvSelection.ticket(t.id)
-                            sidebarRow(
-                                isActive: store.selection == key,
-                                leading: {
-                                    AnyView(
-                                        Circle().fill(statusColor(t.status))
-                                            .frame(width: 8, height: 8)
-                                            .padding(5)
-                                    )
-                                }
-                            ) {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(t.title).font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(chatTextHi).lineLimit(1)
-                                    Text(t.id).font(.system(size: 9, design: .monospaced))
-                                        .foregroundColor(chatTextLow)
-                                }
-                            } onTap: {
-                                store.selection = key
-                            }
-                        }
-                        if store.tickets.isEmpty {
-                            Text("no tickets").font(.system(size: 10)).foregroundColor(chatTextLow)
+                        if store.workers.isEmpty {
+                            Text("no workers").font(.system(size: 10)).foregroundColor(chatTextLow)
                                 .padding(.horizontal, 8)
+                        } else {
+                            ForEach(store.workers) { worker in
+                                sidebarRow(
+                                    isActive: store.selection == .agent(worker.name),
+                                    leading: {
+                                        AnyView(
+                                            VStack(spacing: 1) {
+                                                agentBadge(worker.name, size: 28)
+                                                if let model = worker.modelId {
+                                                    let shortModel = model.split(separator: "-").last.map(String.init) ?? model
+                                                    Text(shortModel)
+                                                        .font(.system(size: 8, design: .monospaced))
+                                                        .foregroundColor(.secondary)
+                                                        .opacity(0.7)
+                                                        .lineLimit(1)
+                                                        .truncationMode(.tail)
+                                                }
+                                            }
+                                            .frame(width: 28)
+                                        )
+                                    }
+                                ) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(worker.displayName)
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(chatTextHi)
+                                        if let model = worker.modelId {
+                                            Text(model)
+                                                .font(.system(size: 9, design: .monospaced))
+                                                .foregroundColor(chatTextLow)
+                                        }
+                                    }
+                                    Spacer()
+                                    if let lane = worker.roleLane, !lane.isEmpty {
+                                        Text(lane)
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 4).padding(.vertical, 1)
+                                            .background(Capsule().fill(chatAccent.opacity(0.6)))
+                                    }
+                                } onTap: {
+                                    store.selection = .agent(worker.name)
+                                }
+                            }
                         }
                     }
                 }
+
+                sidebarSection(title: "Board", icon: "rectangle.grid.3x2") {
+                    sidebarRow(
+                        isActive: store.selection == .kanban,
+                        leading: {
+                            AnyView(
+                                Image(systemName: "square.grid.3x2.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(chatAccent)
+                                    .frame(width: 18, height: 18)
+                            )
+                        }
+                    ) {
+                        Text("Kanban").font(.system(size: 12, weight: .medium))
+                            .foregroundColor(chatTextHi)
+                        Spacer(minLength: 4)
+                        let openCount = store.tickets.filter { $0.status != "done" }.count
+                        if openCount > 0 {
+                            Text("\(openCount)")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(chatTextLow)
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Capsule().fill(chatPanel))
+                        }
+                    } onTap: {
+                        store.selection = .kanban
+                    }
+                }
+
+                // Per-ticket entries removed — use Kanban board view instead.
+                // (Click any card in Kanban to open that ticket's convo.)
                 Spacer(minLength: 8)
             }
             .padding(.vertical, 12)
@@ -877,9 +1200,16 @@ struct AgentChatPopupView: View {
         .background(chatSidebar)
     }
 
-    private func sidebarSection<C: View>(title: String, icon: String, @ViewBuilder content: () -> C) -> some View {
+    private func sidebarSection<C: View>(title: String, icon: String, isCollapsed: Binding<Bool>? = nil, @ViewBuilder content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
+                if let collapsed = isCollapsed {
+                    Image(systemName: collapsed.wrappedValue ? "chevron.right" : "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(chatTextMid)
+                        .frame(width: 12)
+                        .onTapGesture { collapsed.wrappedValue.toggle() }
+                }
                 Image(systemName: icon).font(.system(size: 10, weight: .semibold))
                     .foregroundColor(chatAccent)
                 Text(title.uppercased())
@@ -888,7 +1218,11 @@ struct AgentChatPopupView: View {
                     .tracking(0.5)
             }
             .padding(.horizontal, 10)
-            content()
+            if let collapsed = isCollapsed, !collapsed.wrappedValue {
+                content()
+            } else if isCollapsed == nil {
+                content()
+            }
         }
     }
 
@@ -920,9 +1254,13 @@ struct AgentChatPopupView: View {
         VStack(spacing: 0) {
             conversationHeader
             Divider().background(chatPrimary.opacity(0.15))
-            messageFeed
-            Divider().background(chatPrimary.opacity(0.25))
-            composer
+            if store.selection == .kanban {
+                kanbanBoard
+            } else {
+                messageFeed
+                Divider().background(chatPrimary.opacity(0.25))
+                composer
+            }
         }
         .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -1024,6 +1362,270 @@ struct AgentChatPopupView: View {
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(chatPanel.opacity(0.5))
                 }
+            case .agent:
+                Text("Agent detail").foregroundColor(chatTextLow)
+            case .kanban:
+                HStack(spacing: 10) {
+                    Image(systemName: "square.grid.3x2.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(chatAccent)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(chatPanel))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Kanban Board").font(.system(size: 13, weight: .semibold)).foregroundColor(chatTextHi)
+                        Text("\(store.tickets.filter { $0.status != "done" }.count) open · \(store.tickets.count) total")
+                            .font(.system(size: 10)).foregroundColor(chatTextMid)
+                    }
+                    Spacer()
+                    Button {
+                        showNewConvSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.circle.fill")
+                            Text("New ticket")
+                        }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(chatAccent))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(chatPanel.opacity(0.5))
+            }
+        }
+    }
+
+    // MARK: - Kanban board
+
+    private let kanbanColumns: [(String, String)] = [
+        ("new", "New"),
+        ("in_progress", "In progress"),
+        ("blocked", "Blocked"),
+        ("review", "Review"),
+        ("done", "Done")
+    ]
+
+    private var kanbanBoard: some View {
+        VStack(spacing: 0) {
+            // Filter toolbar: type (epic / story / bug / task / review) + bd sync
+            HStack(spacing: 10) {
+                Text("Type:").font(.system(size: 11)).foregroundColor(chatTextLow)
+                Picker("", selection: $kanbanTypeFilter) {
+                    Text("all").tag("all")
+                    Text("epic").tag("epic")
+                    Text("story").tag("story")
+                    Text("bug").tag("bug")
+                    Text("task").tag("task")
+                    Text("review").tag("review")
+                    Text("docs").tag("docs")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 100)
+
+                Spacer()
+
+                Button {
+                    syncBeads()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                        Text("Sync beads")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(chatTextHi)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                }
+                .buttonStyle(.plain)
+                .help("Push current tickets to ~/.beads/beads.db via `bd` CLI")
+
+                if let result = bdSyncResult {
+                    Text(result)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(chatTextLow)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(chatPanel.opacity(0.3))
+
+            kanbanColumnsView
+        }
+    }
+
+    private var kanbanColumnsView: some View {
+        ScrollView(.horizontal) {
+            HStack(alignment: .top, spacing: 12) {
+                ForEach(kanbanColumns, id: \.0) { (status, label) in
+                    let cards = store.tickets.filter {
+                        $0.status == status &&
+                        (kanbanTypeFilter == "all" || $0.category == kanbanTypeFilter)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Circle().fill(statusColor(status)).frame(width: 8, height: 8)
+                            Text(label).font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(chatTextHi)
+                            Spacer()
+                            Text("\(cards.count)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(chatTextLow)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+
+                        ScrollView {
+                            VStack(spacing: 6) {
+                                ForEach(cards) { t in
+                                    kanbanCard(t)
+                                }
+                                if cards.isEmpty {
+                                    Text("empty")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(chatTextLow.opacity(0.6))
+                                        .padding(.vertical, 12)
+                                }
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.bottom, 8)
+                        }
+                    }
+                    .frame(width: 220)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(chatPanel.opacity(0.35)))
+                }
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(chatBg)
+    }
+
+    private func kanbanCard(_ t: ChatTicket) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                // Type pill (epic / story / bug / task / review / docs)
+                if !t.category.isEmpty {
+                    Text(t.category)
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background(Capsule().fill(typeColor(t.category)))
+                }
+                priorityPill(t.priority)
+                Spacer()
+                Text(t.id).font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(chatTextLow)
+            }
+            Text(t.title)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(chatTextHi)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            HStack(spacing: 4) {
+                if let owner = t.ownerAgent, !owner.isEmpty {
+                    agentBadge(owner, size: 14)
+                    Text(owner).font(.system(size: 10)).foregroundColor(chatTextMid)
+                } else {
+                    Text("unassigned").font(.system(size: 10)).foregroundColor(chatTextLow.opacity(0.7))
+                }
+                Spacer()
+            }
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(chatPanel))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(statusColor(t.status).opacity(0.3), lineWidth: 0.75))
+        .contentShape(Rectangle())
+        .onTapGesture { store.selection = .ticket(t.id) }
+        .contextMenu {
+            Menu("Assign owner") {
+                ForEach(knownAgents.filter { $0 != "sai" }, id: \.self) { a in
+                    Button(a) { store.assignTicket(t.id, owner: a) }
+                }
+                Button("Unassign") { store.assignTicket(t.id, owner: nil) }
+            }
+            Menu("Status") {
+                ForEach(["new","in_progress","blocked","review","done"], id: \.self) { s in
+                    Button(s) { store.updateTicketStatus(t.id, status: s) }
+                }
+            }
+            Divider()
+            Button("Open ticket") { store.selection = .ticket(t.id) }
+        }
+    }
+
+    /// Distinct color per ticket type for the Kanban pill.
+    private func typeColor(_ category: String) -> Color {
+        switch category.lowercased() {
+        case "epic":   return Color(red: 0.55, green: 0.35, blue: 0.85)
+        case "story":  return Color(red: 0.30, green: 0.60, blue: 0.85)
+        case "bug":    return Color(red: 0.90, green: 0.35, blue: 0.35)
+        case "task":   return Color(red: 0.40, green: 0.70, blue: 0.45)
+        case "review": return Color(red: 0.85, green: 0.55, blue: 0.20)
+        case "docs":   return Color(red: 0.65, green: 0.50, blue: 0.85)
+        default:       return chatTextLow
+        }
+    }
+
+    /// Sync current chat-tickets to local beads CLI (bd create / update).
+    /// Best-effort: skip if `bd` CLI not installed.
+    private func syncBeads() {
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Detect bd
+            let probe = Process()
+            probe.launchPath = "/bin/bash"
+            probe.arguments = ["-c", "command -v bd"]
+            let pipe = Pipe()
+            probe.standardOutput = pipe
+            probe.standardError = pipe
+            try? probe.run()
+            probe.waitUntilExit()
+            let out = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+            if !out.contains("/bd") {
+                DispatchQueue.main.async {
+                    self.bdSyncResult = "bd not installed — run `brew install beads`"
+                }
+                return
+            }
+            // Pull-only sync first (read remote). Per-ticket bd create/update
+            // requires a deeper schema map — keep this as a one-way push of
+            // chat-ticket titles + status to bd via `bd create -t '<title>'`.
+            // Skip if title already exists in bd.
+            let tickets = self.store.tickets
+            var pushed = 0
+            // Priority words → bd's 0-4 scheme (P0 urgent ... P4 low)
+            func bdPriority(_ p: String) -> String {
+                switch p.lowercased() {
+                case "urgent", "p0": return "P0"
+                case "high", "p1":   return "P1"
+                case "p2", "":       return "P2"
+                case "normal":       return "P2"
+                case "p3":           return "P3"
+                case "low", "p4":    return "P4"
+                default:             return "P2"
+                }
+            }
+            for t in tickets {
+                let title = t.title.replacingOccurrences(of: "'", with: "''")
+                let prio = bdPriority(t.priority)
+                // bd create [title] — title POSITIONAL. BEADS_DIR env points at the workspace.
+                let cmd = "BEADS_DIR=$HOME/.beads bd list --json 2>/dev/null | grep -q '\(title)' || BEADS_DIR=$HOME/.beads bd create '\(title)' -p \(prio) --external-ref 'chat-ticket:\(t.id)' >/dev/null 2>&1"
+                let p = Process()
+                p.launchPath = "/bin/bash"
+                p.arguments = ["-c", cmd]
+                try? p.run()
+                p.waitUntilExit()
+                if p.terminationStatus == 0 { pushed += 1 }
+            }
+            // Final bd sync (git push)
+            let sync = Process()
+            sync.launchPath = "/bin/bash"
+            sync.arguments = ["-c", "BEADS_DIR=$HOME/.beads bd sync 2>&1"]
+            try? sync.run()
+            sync.waitUntilExit()
+            DispatchQueue.main.async {
+                self.bdSyncResult = "synced \(pushed)/\(tickets.count) to bd"
             }
         }
     }
@@ -1053,7 +1655,17 @@ struct AgentChatPopupView: View {
                     proxy.scrollTo(newId, anchor: .bottom)
                 }
             }
+            .onChange(of: store.messages.count) { _, _ in
+                // Fires after load() finishes loading messages for a new selection.
+                // Defer scroll to next runloop tick so the LazyVStack has rendered.
+                if let last = store.messages.last?.id {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        proxy.scrollTo(last, anchor: .bottom)
+                    }
+                }
+            }
             .onChange(of: store.selection) { _, _ in
+                // Immediate scroll attempt (may run before messages reload)
                 if let last = store.messages.last?.id {
                     proxy.scrollTo(last, anchor: .bottom)
                 }
@@ -1062,11 +1674,18 @@ struct AgentChatPopupView: View {
     }
 
     private func messageGroupView(_ grp: MessageGroup) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            agentBadge(grp.from, size: 28)
-            VStack(alignment: .leading, spacing: 3) {
+        let isMe = grp.from == store.me
+        return HStack(alignment: .top, spacing: 10) {
+            if isMe { Spacer(minLength: 40) }
+            if !isMe { agentBadge(grp.from, size: 28) }
+            VStack(alignment: isMe ? .trailing : .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    VStack(alignment: .leading, spacing: 0) {
+                    if isMe {
+                        Text(prettyTime(grp.messages.first?.createdAt ?? ""))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(chatTextLow)
+                    }
+                    VStack(alignment: isMe ? .trailing : .leading, spacing: 0) {
                         Text(grp.from)
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundColor(agentColor(grp.from))
@@ -1078,45 +1697,88 @@ struct AgentChatPopupView: View {
                                 .opacity(0.7)
                         }
                     }
-                    Text(prettyTime(grp.messages.first?.createdAt ?? ""))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(chatTextLow)
+                    if !isMe {
+                        Text(prettyTime(grp.messages.first?.createdAt ?? ""))
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(chatTextLow)
+                    }
                 }
                 ForEach(grp.messages) { msg in
-                    messageBubble(msg)
+                    messageBubble(msg, isMe: isMe)
                 }
             }
-            Spacer(minLength: 0)
+            if isMe { agentBadge(grp.from, size: 28) }
+            if !isMe { Spacer(minLength: 40) }
         }
     }
 
-    private func messageBubble(_ msg: ChatMessage) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            renderContent(msg.content)
-                .font(.system(size: 12))
-                .foregroundColor(chatTextHi)
-                .textSelection(.enabled)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(agentColor(msg.from).opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(agentColor(msg.from).opacity(0.18), lineWidth: 0.5)
-                )
-                .help(prettyTime(msg.createdAt))
-                .contextMenu {
-                    Button("Copy") {
-                        let pb = NSPasteboard.general
-                        pb.clearContents()
-                        pb.setString(msg.content, forType: .string)
+    /// Read-receipt state for one message based on store.readBy.
+    /// - sent (single grey check): msg exists, no receipts from others
+    /// - delivered (double grey): at least one other agent has a receipt
+    /// - read by all (double blue): all expected recipients have receipts
+    private func receiptState(for msg: ChatMessage) -> (icon: String, color: Color)? {
+        guard msg.from == store.me else { return nil }
+        let readers = store.readBy[msg.id] ?? []
+        let others = readers.subtracting([store.me])
+        // Determine expected recipients
+        let expected: Set<String>
+        if let rid = msg.roomId, let room = store.rooms.first(where: { $0.id == rid }) {
+            expected = Set(room.members).subtracting([store.me])
+        } else {
+            expected = [msg.to]
+        }
+        if expected.isEmpty {
+            return ("checkmark", chatTextLow)  // single grey
+        }
+        if others.isSuperset(of: expected) {
+            return ("checkmark.circle.fill", Color(red: 0.30, green: 0.65, blue: 1.0))  // double blue
+        }
+        if !others.isEmpty {
+            return ("checkmark.circle", chatTextLow)  // double grey
+        }
+        return ("checkmark", chatTextLow)  // single grey
+    }
+
+    private func messageBubble(_ msg: ChatMessage, isMe: Bool = false) -> some View {
+        VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                renderContent(msg.content)
+                    .font(.system(size: 12))
+                    .foregroundColor(chatTextHi)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isMe
+                                  ? chatAccent.opacity(0.20)
+                                  : agentColor(msg.from).opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(isMe
+                                    ? chatAccent.opacity(0.35)
+                                    : agentColor(msg.from).opacity(0.18),
+                                    lineWidth: 0.5)
+                    )
+                    .help(prettyTime(msg.createdAt))
+                    .contextMenu {
+                        Button("Copy") {
+                            let pb = NSPasteboard.general
+                            pb.clearContents()
+                            pb.setString(msg.content, forType: .string)
+                        }
+                        Divider()
+                        Button("Delete message", role: .destructive) {
+                            confirmAndDeleteMessage(msg)
+                        }
                     }
-                    Divider()
-                    Button("Delete message", role: .destructive) {
-                        confirmAndDeleteMessage(msg)
-                    }
+                if let receipt = receiptState(for: msg) {
+                    Image(systemName: receipt.icon)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(receipt.color)
+                        .help("Read receipt")
                 }
+            }
         }
     }
 
@@ -1387,39 +2049,109 @@ struct AgentChatPopupView: View {
                         }
                         rightSection(title: "Actions") {
                             VStack(spacing: 4) {
-                                Button {
-                                    store.claimTicket(t.id)
-                                } label: {
-                                    HStack { Image(systemName: "hand.raised"); Text("Claim"); Spacer() }
-                                        .font(.system(size: 11))
-                                        .foregroundColor(chatTextHi)
-                                        .padding(.horizontal, 8).padding(.vertical, 5)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
-                                }
-                                .buttonStyle(.plain)
-                                Menu {
-                                    ForEach(["new", "in_progress", "blocked", "review", "done"], id: \.self) { s in
-                                        Button(s) { store.updateTicketStatus(t.id, status: s) }
+                                // Done tickets get ONLY the Reopen button (no Claim, no Status change, no Link).
+                                if t.status == "done" {
+                                    Button {
+                                        store.updateTicketStatus(t.id, status: "in_progress")
+                                    } label: {
+                                        HStack { Image(systemName: "arrow.uturn.backward.circle"); Text("Reopen"); Spacer() }
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 8).padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(chatAccent))
                                     }
-                                } label: {
-                                    HStack { Image(systemName: "arrow.right.circle"); Text("Change Status"); Spacer() }
-                                        .font(.system(size: 11))
-                                        .foregroundColor(chatTextHi)
-                                        .padding(.horizontal, 8).padding(.vertical, 5)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                                    .buttonStyle(.plain)
+                                } else {
+                                    // Live actions (only when ticket is still open)
+                                    Button {
+                                        store.claimTicket(t.id)
+                                    } label: {
+                                        HStack { Image(systemName: "hand.raised"); Text("Claim"); Spacer() }
+                                            .font(.system(size: 11))
+                                            .foregroundColor(chatTextHi)
+                                            .padding(.horizontal, 8).padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                                    }
+                                    .buttonStyle(.plain)
+                                    Menu {
+                                        ForEach(["new", "in_progress", "blocked", "review", "done"], id: \.self) { s in
+                                            Button(s) { store.updateTicketStatus(t.id, status: s) }
+                                        }
+                                    } label: {
+                                        HStack { Image(systemName: "arrow.right.circle"); Text("Change Status"); Spacer() }
+                                            .font(.system(size: 11))
+                                            .foregroundColor(chatTextHi)
+                                            .padding(.horizontal, 8).padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                                    }
+                                    .menuStyle(.borderlessButton)
+                                    Menu {
+                                        ForEach(knownAgents.filter { $0 != "sai" }, id: \.self) { a in
+                                            Button(a) { store.assignTicket(t.id, owner: a) }
+                                        }
+                                        Button("Unassign") { store.assignTicket(t.id, owner: nil) }
+                                    } label: {
+                                        HStack { Image(systemName: "person.crop.circle"); Text("Assign"); Spacer() }
+                                            .font(.system(size: 11))
+                                            .foregroundColor(chatTextHi)
+                                            .padding(.horizontal, 8).padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                                    }
+                                    .menuStyle(.borderlessButton)
+                                    Button {
+                                        let id = store.createRoom(name: "room for \(t.id)", members: knownAgents, description: "Linked to \(t.id)", ticketId: t.id)
+                                        if let id = id { store.selection = .room(id) }
+                                    } label: {
+                                        HStack { Image(systemName: "person.3"); Text("Link Room"); Spacer() }
+                                            .font(.system(size: 11))
+                                            .foregroundColor(chatTextHi)
+                                            .padding(.horizontal, 8).padding(.vertical, 5)
+                                            .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                                    }
+                                    .buttonStyle(.plain)
                                 }
-                                .menuStyle(.borderlessButton)
-                                Button {
-                                    let id = store.createRoom(name: "room for \(t.id)", members: knownAgents, description: "Linked to \(t.id)", ticketId: t.id)
-                                    if let id = id { store.selection = .room(id) }
-                                } label: {
-                                    HStack { Image(systemName: "person.3"); Text("Link Room"); Spacer() }
-                                        .font(.system(size: 11))
-                                        .foregroundColor(chatTextHi)
-                                        .padding(.horizontal, 8).padding(.vertical, 5)
-                                        .background(RoundedRectangle(cornerRadius: 5).fill(chatPanel))
+                            }
+                        }
+                    }
+                case .agent(let name):
+                    if let worker = store.workers.first(where: { $0.name == name }) {
+                        rightSection(title: name.uppercased()) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    agentBadge(name, size: 32)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(worker.displayName).font(.system(size: 12, weight: .semibold)).foregroundColor(chatTextHi)
+                                        if let provider = worker.provider {
+                                            Text(provider).font(.system(size: 10)).foregroundColor(chatTextMid)
+                                        }
+                                    }
+                                    Spacer()
                                 }
-                                .buttonStyle(.plain)
+                                HStack(spacing: 4) {
+                                    Text("model:").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                    Text(worker.modelId ?? "—").font(.system(size: 10, design: .monospaced)).foregroundColor(chatTextMid)
+                                }
+                                if let lane = worker.roleLane, !lane.isEmpty {
+                                    HStack(spacing: 4) {
+                                        Text("role:").font(.system(size: 10)).foregroundColor(chatTextLow)
+                                        Text(lane).font(.system(size: 10)).foregroundColor(chatTextMid)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                case .kanban:
+                    rightSection(title: "Board summary") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(["new","in_progress","blocked","review","done"], id: \.self) { s in
+                                let n = store.tickets.filter { $0.status == s }.count
+                                HStack {
+                                    Circle().fill(statusColor(s)).frame(width: 7, height: 7)
+                                    Text(s).font(.system(size: 11)).foregroundColor(chatTextMid)
+                                    Spacer()
+                                    Text("\(n)").font(.system(size: 11, design: .monospaced)).foregroundColor(chatTextHi)
+                                }
                             }
                         }
                     }
