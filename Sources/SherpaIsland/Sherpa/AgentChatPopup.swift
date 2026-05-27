@@ -20,13 +20,24 @@ fileprivate let knownAgents = ["sai", "claude", "codex", "agy", "ollama", "jules
 
 fileprivate func agentColor(_ name: String) -> Color {
     switch name.lowercased() {
-    case "sai":     return Color(red: 0.95, green: 0.45, blue: 0.55)   // human pink
-    case "claude":  return Color(red: 0.85, green: 0.50, blue: 0.30)   // claude orange
-    case "codex":   return Color(red: 0.30, green: 0.75, blue: 0.55)   // openai green
-    case "agy":     return Color(red: 0.45, green: 0.65, blue: 0.95)   // google blue
-    case "ollama":  return Color(red: 0.55, green: 0.40, blue: 0.85)   // local purple
-    case "jules":   return Color(red: 0.95, green: 0.75, blue: 0.30)   // google yellow
-    default:        return chatAccent
+    // Human + CLI agents
+    case "sai":       return Color(red: 0.95, green: 0.45, blue: 0.55)   // human pink
+    case "claude":    return Color(red: 0.85, green: 0.50, blue: 0.30)   // claude orange
+    case "codex":     return Color(red: 0.30, green: 0.75, blue: 0.55)   // openai green
+    case "agy":       return Color(red: 0.45, green: 0.65, blue: 0.95)   // google blue
+    case "ollama":    return Color(red: 0.55, green: 0.40, blue: 0.85)   // local purple
+    case "jules":     return Color(red: 0.95, green: 0.75, blue: 0.30)   // google yellow
+    // SDK personas (sherpa-platform orchestrator)
+    case "pm":        return Color(red: 0.51, green: 0.31, blue: 0.85)   // violet  #8250D8
+    case "eng":       return Color(red: 0.13, green: 0.83, blue: 0.93)   // cyan    #22D3EE
+    case "reviewer":  return Color(red: 0.99, green: 0.88, blue: 0.28)   // yellow  #FDE047
+    case "qa":        return Color(red: 0.30, green: 0.85, blue: 0.55)   // green   #4ADE80
+    case "architect": return Color(red: 0.78, green: 0.45, blue: 0.95)   // magenta #C474F2
+    case "security":  return Color(red: 0.96, green: 0.40, blue: 0.40)   // red     #F87171
+    case "research":  return Color(red: 0.38, green: 0.65, blue: 0.98)   // blue    #60A5FA
+    case "docs":      return Color(red: 0.16, green: 0.72, blue: 0.65)   // teal    #14B8A6
+    case "system":    return Color(red: 0.55, green: 0.58, blue: 0.62)   // slate   #8C94A3
+    default:          return chatAccent
     }
 }
 
@@ -37,13 +48,21 @@ fileprivate func agentInitial(_ name: String) -> String {
 // MARK: - Per-agent backing model (rendered as small tag under name/avatar)
 
 fileprivate let agentModel: [String: String] = [
-    "sai":    "human",
-    "claude": "opus-4.7",
-    "codex":  "gpt-5.x",
-    "agy":    "gemini-3-pro",
-    "ollama": "qwen2.5-coder:14b",
-    "jules":  "gemini-async",
-    "system": "—"
+    "sai":       "human",
+    "claude":    "opus-4.7",
+    "codex":     "gpt-5.x",
+    "agy":       "gemini-3-pro",
+    "ollama":    "qwen2.5-coder:14b",
+    "jules":     "gemini-async",
+    "pm":        "nova-pro",
+    "eng":       "qwen3-coder",
+    "reviewer":  "claude-haiku-4.5",
+    "qa":        "nova-lite",
+    "architect": "claude-opus-4.7",
+    "security":  "claude-haiku-4.5",
+    "research":  "gemini-2.5-flash",
+    "docs":      "nova-lite",
+    "system":    "—"
 ]
 
 fileprivate func modelTag(for agent: String) -> String {
